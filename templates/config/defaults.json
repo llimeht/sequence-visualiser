@@ -1,0 +1,30 @@
+{
+  "branding": {
+    "university_name": "University Name",
+    "logo_path": "university-logo.png"
+  },
+  "html": {
+    "title": "Enrolment Sequence",
+    "heading": "Enrolment Sequence"
+  },
+  "pdf": {
+    "colours": {
+      "years": {
+        "Year 1": "#fafafa",
+        "Year 2": "#f5f5f5",
+        "Year 3": "#f0f0f0",
+        "Year 4": "#ebebeb",
+        "Year 5": "#e6e6e6"
+      },
+      "terms": {
+        "Term 1": "#f2f2f2",
+        "Term 2": "#e8e8e8",
+        "Term 3": "#dedede"
+      },
+      "semesters": {
+        "Semester 1": "#ededed",
+        "Semester 2": "#e2e2e2"
+      }
+    }
+  }
+}

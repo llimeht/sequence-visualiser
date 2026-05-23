@@ -1,0 +1,91 @@
+  .intro-heading {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .intro-logo {
+    height: 48px;
+    width: auto;
+    display: block;
+    margin-right: 12px;
+  }
+<style>
+  :root {
+    --bg: #f3f6fb;
+    --panel: #ffffff;
+    --ink: #10233a;
+    --accent: #0d5f8f;
+    --line: #d4dfeb;
+  }
+  body {
+    margin: 0;
+    background: linear-gradient(180deg, #edf2f8 0%, #f8fbff 100%);
+    color: var(--ink);
+    font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  }
+  main {
+    max-width: 1100px;
+    margin: 24px auto 40px;
+    padding: 0 16px;
+  }
+  .intro {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  h1 { margin: 0 0 8px; font-size: 1.35rem; }
+  .meta { font-size: 0.95rem; color: #3a4f67; }
+  details.year {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  details.year > summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 12px 14px;
+    font-weight: 700;
+    background: #eff6ff;
+    border-bottom: 1px solid var(--line);
+  }
+  details.year > summary::-webkit-details-marker { display: none; }
+  .periods { padding: 10px; display: grid; gap: 10px; }
+  .period {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .period h3 {
+    margin: 0;
+    padding: 10px;
+    font-size: 1rem;
+    color: #0d3f66;
+    background: #f4f9ff;
+    border-bottom: 1px solid var(--line);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+  }
+  td {
+    border-top: 1px solid var(--line);
+    padding: 8px 10px;
+    vertical-align: top;
+  }
+  td.code {
+    width: 175px;
+    font-weight: 700;
+    color: var(--accent);
+    font-family: "JetBrains Mono", "Consolas", monospace;
+  }
+  .uoc { color: #355574; font-size: 0.9rem; }
+  @media (max-width: 760px) {
+    td.code { width: 135px; }
+    .period h3 { font-size: 0.95rem; }
+  }
+</style>

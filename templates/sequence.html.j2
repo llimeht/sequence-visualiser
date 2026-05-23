@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ tweaks.get("html", {}).get("title", plan_code ~ " " ~ plan.intake) }}</title>
+  {% include "sequence-style.html.j2" ignore missing %}
+</head>
+<body>
+  <main>
+    <section class="intro">
+      <h1>{{ tweaks.get("html", {}).get("heading", plan_code ~ " Sequence") }}</h1>
+      <div class="meta">
+        {{ plan.intake }} | {{ rule.program_name }} | {{ rule.specialisation_names | join(", ") }}
+      </div>
+      {% if rule.validity_from or rule.validity_to %}
+      <div class="meta">Rule validity: {{ rule.validity_from }} - {{ rule.validity_to }}</div>
+      {% endif %}
+    </section>
+
+    {% for year in years %}
+    <details class="year" open>
+      <summary>{{ year.enrol_year }} ({{ year.year }})</summary>
+      <div class="periods">
+        {% for period in year.periods %}
+        <section class="period">
+          <h3>{{ period.period }}</h3>
+          <table>
+            <tbody>
+              {% for course in period.courses %}
+              <tr>
+                <td class="code">{{ course.code }}</td>
+                <td>
+                  {{ course.title }}
+                  {% if course.uoc != 6 %}
+                    <span class="uoc">({{ course.uoc }} UoC)</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </section>
+        {% endfor %}
+      </div>
+    </details>
+    {% endfor %}
+  </main>
+</body>
+</html>

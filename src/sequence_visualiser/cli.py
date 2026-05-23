@@ -1,0 +1,182 @@
+"""
+sequence_visualiser.cli
+======================
+Command-line interface for the sequence visualiser tool. Handles argument parsing,
+batch processing of plan files, and rendering to HTML/PDF formats.
+"""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+from .config_loader import ConfigError, load_tweaks
+from .course_overrides import (
+    CourseOverrideError,
+    apply_course_overrides,
+    load_course_overrides,
+)
+from .html_renderer import render_html
+from .models import RenderContext
+from .pdf_renderer import PdfRenderError, render_pdf
+from .plan_loader import PlanParseError, load_plan
+from .rules_resolver import RuleResolutionError, resolve_rule_metadata
+from .timeline import TimelineError, build_year_layouts
+
+
+@dataclass(frozen=True)
+class PlanFailure:
+    """Represents a failed plan rendering attempt, with the file and reason."""
+
+    plan: Path
+    reason: str
+
+
+def _parse_formats(value: str) -> set[str]:
+    """Parse the formats argument, ensuring only allowed values are accepted.
+
+    Args:
+        value: Comma-separated string of format names.
+    Returns:
+        Set of valid format names (html, pdf).
+    Raises:
+        argparse.ArgumentTypeError: If unknown or missing formats are provided.
+    """
+    values = {item.strip().lower() for item in value.split(",") if item.strip()}
+    allowed = {"html", "pdf", "both"}
+    unknown = values.difference(allowed)
+    if unknown:
+        raise argparse.ArgumentTypeError(
+            f"Unknown format value(s): {', '.join(sorted(unknown))}"
+        )
+    if "both" in values:
+        return {"html", "pdf"}
+    if not values:
+        raise argparse.ArgumentTypeError("At least one format is required")
+    return values
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for the CLI."""
+    parser = argparse.ArgumentParser(
+        description="Visualise enrolment sequences as HTML and PDF"
+    )
+    parser.add_argument("plan_files", nargs="+", type=Path, help="Plan JSON file(s)")
+    parser.add_argument("--output-dir", type=Path, default=Path("output"))
+    parser.add_argument("--rules-dir", type=Path, default=Path("rules"))
+    parser.add_argument("--templates-dir", type=Path, default=Path("templates"))
+    parser.add_argument("--config-dir", type=Path, default=Path("templates/config"))
+    parser.add_argument(
+        "--template-overrides-dir",
+        type=Path,
+        default=Path("template-overrides/config"),
+        help="Template override config directory",
+    )
+    parser.add_argument("--formats", type=_parse_formats, default={"html", "pdf"})
+    return parser
+
+
+def _render_single_plan(
+    plan_file: Path,
+    output_dir: Path,
+    rules_dir: Path,
+    templates_dir: Path,
+    config_dir: Path,
+    template_overrides_dir: Path,
+    formats: set[str],
+) -> None:
+    """Render a single plan file to the specified formats (HTML/PDF).
+
+    Args:
+        plan_file: Path to the plan JSON file.
+        output_dir: Directory to write output files.
+        rules_dir: Directory containing rules files.
+        templates_dir: Directory containing Jinja2 templates.
+        config_dir: Directory containing config files.
+        template_overrides_dir: Directory for template override configs.
+        formats: Set of formats to render (html, pdf).
+    """
+    plan = load_plan(plan_file)
+    identity, rule_metadata = resolve_rule_metadata(plan, rules_dir)
+
+    local_config_dir = templates_dir.parent / "template-overrides" / "config"
+    course_overrides = load_course_overrides(config_dir, local_config_dir)
+    patched_courses = apply_course_overrides(plan.courses, course_overrides)
+    if patched_courses is not plan.courses:
+        plan = dataclasses.replace(plan, courses=patched_courses)
+
+    years = build_year_layouts(plan)
+    tweaks = load_tweaks(plan, identity, config_dir, template_overrides_dir)
+
+    context = RenderContext(
+        plan=plan,
+        rule_metadata=rule_metadata,
+        tweaks=tweaks,
+        years=years,
+        plan_code=identity.plan_code,
+        specialisation_code=identity.specialisation_code,
+        degree_code=identity.degree_code,
+    )
+
+    if "html" in formats:
+        render_html(
+            context,
+            templates_dir=templates_dir,
+            output_path=output_dir / f"{plan_file.stem}.html",
+        )
+    if "pdf" in formats:
+        render_pdf(
+            context,
+            output_path=output_dir / f"{plan_file.stem}.pdf",
+            templates_dir=templates_dir,
+        )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Main entry point for the CLI tool.
+
+    Args:
+        argv: Optional list of command-line arguments.
+    Returns:
+        Exit code (0 for success, 1 for any failures).
+    """
+    args = _build_parser().parse_args(argv)
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    failures: list[PlanFailure] = []
+    successes = 0
+
+    for plan_file in args.plan_files:
+        try:
+            _render_single_plan(
+                plan_file=plan_file,
+                output_dir=args.output_dir,
+                rules_dir=args.rules_dir,
+                templates_dir=args.templates_dir,
+                config_dir=args.config_dir,
+                template_overrides_dir=args.template_overrides_dir,
+                formats=args.formats,
+            )
+            successes += 1
+            print(f"OK: {plan_file}")
+        except (
+            PlanParseError,
+            RuleResolutionError,
+            TimelineError,
+            ConfigError,
+            CourseOverrideError,
+            PdfRenderError,
+        ) as exc:
+            failures.append(PlanFailure(plan=plan_file, reason=str(exc)))
+            print(f"FAIL: {plan_file} -> {exc}", file=sys.stderr)
+
+    print(f"Summary: {successes} succeeded, {len(failures)} failed")
+    if failures:
+        for failure in failures:
+            print(f"  - {failure.plan}: {failure.reason}", file=sys.stderr)
+        return 1
+    return 0

@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sequence-visualiser"
+version = "0.1.0"
+description = "CLI tools to visualise enrolment sequences as HTML and PDF"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "BSD-3-Clause" }
+dependencies = [
+	"jinja2>=3.1.0",
+	"reportlab>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+	"mypy>=1.15.0",
+	"pytest>=8.0.0",
+]
+
+[project.scripts]
+sequence-visualiser = "sequence_visualiser.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src", "tests"]
+pretty = true
+show_error_codes = true
