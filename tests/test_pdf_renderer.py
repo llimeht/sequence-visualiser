@@ -34,7 +34,7 @@ def _build_context(tmp_path: Path, stream_names: list[str]) -> RenderContext:
     return RenderContext(
         plan=plan,
         rule_metadata=metadata,
-        tweaks={},
+        tweaks={"runtime": {"date": "2026-05-28", "year": "2026"}},
         years=[],
         plan_code="CEICAH3707",
         specialisation_code="3778",
@@ -56,9 +56,11 @@ def test_build_pdf_metadata_with_streams(tmp_path: Path) -> None:
         " - Artificial Intelligence, Security - 2026 T1 - UNSW Sydney"
     )
     assert (
-        metadata["author"] == "UNSW Sydney / CEICAH3707_2026_T1.json / 3707-3778.json"
+        metadata["author"]
+        == "UNSW Sydney / CEICAH3707_2026_T1.json / 3707-3778.json"
+        " / Information correct as at 2026-05-28"
     )
-    assert metadata["creator"] == "UNSW Sydney / sequence-visualiser"
+    assert metadata["creator"] == "Copyright © 2026 UNSW Sydney / sequence-visualiser"
 
 
 def test_build_pdf_metadata_without_streams(tmp_path: Path) -> None:
@@ -82,6 +84,8 @@ class _FakeCanvas:
         self.drawn_strings: list[str] = []
         self.drawn_text: list[tuple[float, float, str]] = []
         self.drawn_right_text: list[tuple[float, float, str]] = []
+        self.author = ""
+        self.creator = ""
         _FakeCanvas.last = self
 
     def setTitle(self, _value: str) -> None:  # noqa: N802
@@ -91,10 +95,10 @@ class _FakeCanvas:
         return
 
     def setAuthor(self, _value: str) -> None:  # noqa: N802
-        return
+        self.author = _value
 
     def setCreator(self, _value: str) -> None:  # noqa: N802
-        return
+        self.creator = _value
 
     def drawImage(
         self,
@@ -317,6 +321,74 @@ def test_render_pdf_uses_padded_monospace_course_code_field(
     assert len(code_rows) == 1
     assert len(title_rows) == 1
     assert title_rows[0][0] > code_rows[0][0]
+
+
+def test_render_pdf_renders_disclaimer_and_footers(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "runtime": {"date": "2026-05-28", "year": "2026"},
+            "pdf": {
+                "top_disclaimer": "Guide only for {university_name} on {date}.",
+                "footer_left": "Check handbook.",
+                "footer_right": "Information correct as at {date}\\nCopyright © {university_name} {year}",
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    assert "Guide only for UNSW Sydney on 2026-05-28." in fake.drawn_strings
+    assert "Check handbook." in fake.drawn_strings
+    assert any(
+        "Information correct as at 2026-05-28" in text for text in fake.drawn_strings
+    )
+    assert any("Copyright © UNSW Sydney 2026" in text for text in fake.drawn_strings)
+    assert fake.author.endswith("Information correct as at 2026-05-28")
+    assert fake.creator.startswith("Copyright © 2026 UNSW Sydney / sequence-visualiser")
 
 
 def test_render_pdf_header_includes_program_and_majors(

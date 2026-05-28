@@ -5,9 +5,13 @@
   },
   "html": {
     "title": "Enrolment Sequence",
-    "heading": "Enrolment Sequence"
+    "heading": "Enrolment Sequence",
+    "top_disclaimer": "Intended as a guide only. Courses do not need to be studied in the exact structure that they appear here. Please consult the handbook for term offerings and prerequisite information before deviating from the recommended sequence. Most courses do not run in all terms."
   },
   "pdf": {
+    "top_disclaimer": "Intended as a guide only. Courses do not need to be studied in the exact structure that they appear here. Please consult the handbook for term offerings and prerequisite information before deviating from the recommended sequence. Most courses do not run in all terms.",
+    "footer_left": "Check the Handbook and Class Timetable for details.",
+    "footer_right": "Information correct as at {date}\nCopyright © {year} {university_name}",
     "colours": {
       "years": {
         "Year 1": "#fafafa",

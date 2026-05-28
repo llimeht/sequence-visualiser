@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import sys
+from datetime import date
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -75,8 +76,26 @@ def _build_parser() -> argparse.ArgumentParser:
         default=Path("template-overrides/config"),
         help="Template override config directory",
     )
+    parser.add_argument(
+        "--datestamp",
+        type=str,
+        help="Date token value in YYYY-mm-dd format (defaults to today)",
+    )
     parser.add_argument("--formats", type=_parse_formats, default={"html", "pdf"})
     return parser
+
+
+def _resolve_datestamp(value: str | None) -> str:
+    """Resolve and validate the effective datestamp in YYYY-mm-dd format."""
+    if value is None:
+        return date.today().isoformat()
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"Invalid --datestamp value '{value}': expected YYYY-mm-dd"
+        ) from exc
+    return parsed.isoformat()
 
 
 def _render_single_plan(
@@ -87,6 +106,7 @@ def _render_single_plan(
     config_dir: Path,
     template_overrides_dir: Path,
     formats: set[str],
+    datestamp: str,
 ) -> None:
     """Render a single plan file to the specified formats (HTML/PDF).
 
@@ -110,6 +130,18 @@ def _render_single_plan(
 
     years = build_year_layouts(plan)
     tweaks = load_tweaks(plan, identity, config_dir, template_overrides_dir)
+    runtime_tweaks = {
+        "date": datestamp,
+        "year": datestamp[:4],
+    }
+    existing_runtime = tweaks.get("runtime")
+    if isinstance(existing_runtime, dict):
+        merged_runtime = dict(existing_runtime)
+        merged_runtime.update(runtime_tweaks)
+    else:
+        merged_runtime = runtime_tweaks
+    tweaks = dict(tweaks)
+    tweaks["runtime"] = merged_runtime
 
     context = RenderContext(
         plan=plan,
@@ -144,6 +176,7 @@ def main(argv: list[str] | None = None) -> int:
         Exit code (0 for success, 1 for any failures).
     """
     args = _build_parser().parse_args(argv)
+    datestamp = _resolve_datestamp(args.datestamp)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -160,6 +193,7 @@ def main(argv: list[str] | None = None) -> int:
                 config_dir=args.config_dir,
                 template_overrides_dir=args.template_overrides_dir,
                 formats=args.formats,
+                datestamp=datestamp,
             )
             successes += 1
             print(f"OK: {plan_file}")

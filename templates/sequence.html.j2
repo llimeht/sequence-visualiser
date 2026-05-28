@@ -3,7 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ tweaks.get("html", {}).get("title", plan_code ~ " " ~ plan.intake) }}</title>
+  <title>{{ html_metadata.get("title", tweaks.get("html", {}).get("title", plan_code ~ " " ~ plan.intake)) }}</title>
+  <meta name="description" content="{{ html_metadata.get('subject', '') }}">
+  <meta name="author" content="{{ html_metadata.get('author', '') }}">
+  <meta name="generator" content="{{ html_metadata.get('creator', '') }}">
+  <meta name="dcterms.title" content="{{ html_metadata.get('title', '') }}">
+  <meta name="dcterms.subject" content="{{ html_metadata.get('subject', '') }}">
+  <meta name="dcterms.creator" content="{{ html_metadata.get('author', '') }}">
+  <meta name="dcterms.contributor" content="{{ html_metadata.get('creator', '') }}">
   {% include "sequence-style.html.j2" ignore missing %}
 </head>
 <body>
@@ -15,6 +22,14 @@
       </div>
       {% if rule.validity_from or rule.validity_to %}
       <div class="meta">Rule validity: {{ rule.validity_from }} - {{ rule.validity_to }}</div>
+      {% endif %}
+      {% set runtime = tweaks.get("runtime", {}) %}
+      {% set disclaimer = tweaks.get("html", {}).get("top_disclaimer", "") %}
+      {% set disclaimer = disclaimer | replace("{date}", runtime.get("date", "")) %}
+      {% set disclaimer = disclaimer | replace("{year}", runtime.get("year", "")) %}
+      {% set disclaimer = disclaimer | replace("{university_name}", tweaks.get("branding", {}).get("university_name", "University")) %}
+      {% if disclaimer %}
+      <div class="meta disclaimer">{{ disclaimer }}</div>
       {% endif %}
     </section>
 
@@ -46,5 +61,26 @@
     </details>
     {% endfor %}
   </main>
+  <footer class="footer-block">
+    {# Expand and render footer, split by newlines with token replacement #}
+    {% set runtime = tweaks.get("runtime", {}) %}
+    {% set branding = tweaks.get("branding", {}) %}
+    {% set university_name = branding.get("university_name", "University") %}
+    {% set year = runtime.get("year", "") %}
+    {% set date = runtime.get("date", "") %}
+    {% set html = tweaks.get("html", {}) %}
+    {% set footer = html.get("footer", "")
+      | replace('{date}', date)
+      | replace('{year}', year)
+      | replace('{university_name}', university_name) %}
+    {% set footer_lines = footer.split('\n') if footer else [] %}
+    {% if footer_lines %}
+      <div class="footer-single">
+        {% for line in footer_lines %}
+          <div>{{ line }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </footer>
 </body>
 </html>

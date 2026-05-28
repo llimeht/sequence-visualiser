@@ -27,7 +27,7 @@ def test_local_overrides_supersede_committed_layers(tmp_path: Path) -> None:
     (override_root / "degree").mkdir(parents=True)
 
     (config_root / "defaults.json").write_text(
-        '{"branding": {"university_name": "Base Uni", "logo_path": "base.png"}}',
+        '{"branding": {"university_name": "Base Uni", "logo_path": "base.png"}, "html": {"top_disclaimer": "Base {date}"}, "pdf": {"footer_left": "Base left", "footer_right": "Info {date} {university_name} {year}"}}',
         encoding="utf-8",
     )
     (config_root / "degree" / "3707.json").write_text(
@@ -35,7 +35,7 @@ def test_local_overrides_supersede_committed_layers(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (override_root / "degree" / "3707.json").write_text(
-        '{"branding": {"university_name": "Local Uni"}}',
+        '{"branding": {"university_name": "Local Uni"}, "pdf": {"footer_left": "Override left"}}',
         encoding="utf-8",
     )
 
@@ -45,3 +45,6 @@ def test_local_overrides_supersede_committed_layers(tmp_path: Path) -> None:
 
     assert tweaks["branding"]["university_name"] == "Local Uni"
     assert tweaks["branding"]["logo_path"] == "base.png"
+    assert tweaks["html"]["top_disclaimer"] == "Base {date}"
+    assert tweaks["pdf"]["footer_left"] == "Override left"
+    assert tweaks["pdf"]["footer_right"] == "Info {date} {university_name} {year}"

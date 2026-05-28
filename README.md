@@ -70,7 +70,7 @@ sequence-visualiser plans/CEIC/CEICAH3707_2026_*.json --output-dir output --form
 - `rules`: degree rule files used for metadata resolution; this is likely from the (transition checker rules repository)[https://github.com/llimeht/transition-checker-rules]
 - `plans`: input enrolment sequence files; this is likely from the outputs of you running the (transition checker)[https://github.com/llimeht/transition-checker] tools (specifically `plan-validate`)
 - `tests`: unit and CLI tests
-- `template-overrides/config/`: your local branded assets; ignored by git.
+- `template-overrides`: your local branded assets including logos, style sheets, course-overrides, colours, footers; ignored by git.
 - `output/`: generated output files; ignored by git.
 
 

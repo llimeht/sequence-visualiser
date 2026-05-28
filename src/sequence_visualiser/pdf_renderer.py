@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.utils import simpleSplit
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
@@ -40,6 +42,12 @@ HEADER_META_BOX_HEIGHT = 34
 HEADER_META_BOX_TOP_PADDING = 6
 HEADER_META_BOX_RIGHT_PADDING = 8
 HEADER_META_BOX_LINE_GAP = 12
+TOP_DISCLAIMER_FONT_SIZE = 8
+TOP_DISCLAIMER_LINE_HEIGHT = 10
+TOP_DISCLAIMER_BOTTOM_GAP = 6
+FOOTER_FONT_SIZE = 8
+FOOTER_LINE_HEIGHT = 10
+FOOTER_TOP_GAP = 4
 DEFAULT_YEAR_FILL = colors.white
 DEFAULT_TERM_FILLS: dict[str, colors.Color] = {
     "Term 1": colors.HexColor("#f2f2f2"),
@@ -183,6 +191,9 @@ def build_pdf_metadata(context: RenderContext, university_name: str) -> dict[str
     intake = context.plan.intake
     source_filename = context.plan.source_path.name
     rules_filename = context.rule_metadata.rule_file.name
+    runtime = _colour_mapping(context.tweaks, "runtime")
+    information_date = str(runtime.get("date", "")).strip() or date.today().isoformat()
+    copyright_year = str(runtime.get("year", "")).strip() or information_date[:4]
 
     return {
         "title": f"Enrolment Sequence for {plan} - {intake} - {university_name}",
@@ -190,9 +201,26 @@ def build_pdf_metadata(context: RenderContext, university_name: str) -> dict[str
             f"Enrolment Sequence for {plan} - {degree_and_streams}"
             f" - {intake} - {university_name}"
         ),
-        "author": f"{university_name} / {source_filename} / {rules_filename}",
-        "creator": f"{university_name} / sequence-visualiser",
+        "author": (
+            f"{university_name} / {source_filename} / {rules_filename}"
+            f" / Information correct as at {information_date}"
+        ),
+        "creator": (
+            f"Copyright © {copyright_year} {university_name} / sequence-visualiser"
+        ),
     }
+
+
+def _expand_tokens(text: str, context: RenderContext, university_name: str) -> str:
+    """Expand supported text tokens from runtime and branding values."""
+    runtime = _colour_mapping(context.tweaks, "runtime")
+    date_value = str(runtime.get("date", "")).strip() or date.today().isoformat()
+    year_value = str(runtime.get("year", "")).strip() or date_value[:4]
+    return (
+        text.replace("{date}", date_value)
+        .replace("{year}", year_value)
+        .replace("{university_name}", university_name)
+    )
 
 
 def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -> None:
@@ -282,8 +310,56 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
         majors_line,
     )
 
+    content_width = page_width - (2 * margin)
+    top_disclaimer_raw = str(pdf_tweaks.get("top_disclaimer", "")).strip()
+    top_disclaimer = _expand_tokens(top_disclaimer_raw, context, university_name)
+    top_disclaimer_lines = (
+        simpleSplit(  # type: ignore[no-untyped-call]
+            top_disclaimer,
+            TEXT_FONT,
+            TOP_DISCLAIMER_FONT_SIZE,
+            content_width,
+        )
+        if top_disclaimer
+        else []
+    )
+
+    footer_left_raw = str(
+        pdf_tweaks.get(
+            "footer_left",
+            "Check the Handbook and Class Timetable for details.",
+        )
+    ).strip()
+    footer_right_raw = str(
+        pdf_tweaks.get(
+            "footer_right",
+            "Information correct as at {date}\\nCopyright © {year} {university_name}",
+        )
+    ).strip()
+    footer_left = _expand_tokens(footer_left_raw, context, university_name)
+    footer_left_lines = [line.strip() for line in footer_left.splitlines() if line.strip()]
+    footer_right = _expand_tokens(footer_right_raw, context, university_name)
+    footer_right_lines = [line.strip() for line in footer_right.splitlines() if line.strip()]
+
+    has_footer = bool(footer_left_lines or footer_right_lines)
+    footer_line_count = max(len(footer_left_lines), len(footer_right_lines))
+    footer_block_height = (
+        (footer_line_count * FOOTER_LINE_HEIGHT) + FOOTER_TOP_GAP if has_footer else 0
+    )
+
     available_top = top - 46
-    available_bottom = margin
+    if top_disclaimer_lines:
+        c.setFont(TEXT_FONT, TOP_DISCLAIMER_FONT_SIZE)
+        disclaimer_y = available_top - TOP_DISCLAIMER_FONT_SIZE
+        for line in top_disclaimer_lines:
+            c.drawString(margin, disclaimer_y, line)
+            disclaimer_y -= TOP_DISCLAIMER_LINE_HEIGHT
+        available_top -= (
+            (len(top_disclaimer_lines) * TOP_DISCLAIMER_LINE_HEIGHT)
+            + TOP_DISCLAIMER_BOTTOM_GAP
+        )
+
+    available_bottom = margin + footer_block_height
     available_height = available_top - available_bottom
 
     if not context.years:
@@ -349,6 +425,20 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
                 text_y -= LINE_HEIGHT
                 if text_y < (period_box_bottom + PERIOD_TEXT_BOTTOM_PADDING):
                     break
+
+    if has_footer:
+        c.setFont(TEXT_FONT, FOOTER_FONT_SIZE)
+        baseline = margin + 2
+        # Draw left and right footers line by line, stacked
+        # Draw footers so that the first line is at the bottom, subsequent lines above
+        for i in range(footer_line_count):
+            y = baseline + ((footer_line_count - 1 - i) * FOOTER_LINE_HEIGHT)
+            # For left footer
+            if i < len(footer_left_lines):
+                c.drawString(margin, y, footer_left_lines[i])
+            # For right footer
+            if i < len(footer_right_lines):
+                c.drawRightString(page_width - margin, y, footer_right_lines[i])
 
     c.showPage()
     c.save()

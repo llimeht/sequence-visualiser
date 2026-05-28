@@ -153,3 +153,53 @@ def test_pdf_renders_with_custom_colour_config(tmp_path: Path) -> None:
     pdf = output_dir / "CEICAH3707_2026_T2.pdf"
     assert pdf.exists()
     assert pdf.stat().st_size > 0
+
+
+def test_html_disclaimer_uses_datestamp_tokens(tmp_path: Path) -> None:
+    templates_dir = tmp_path / "templates"
+    (templates_dir / "config").mkdir(parents=True)
+    local_overrides = tmp_path / "template-overrides" / "config"
+    local_overrides.mkdir(parents=True)
+    (templates_dir / "config" / "defaults.json").write_text(
+        '{"branding":{"university_name":"Test Uni"},"html":{"top_disclaimer":"Guide for {university_name} as at {date} ({year})"}}',
+        encoding="utf-8",
+    )
+    (templates_dir / "sequence.html.j2").write_text(
+        """<!doctype html><html><body><section class=\"intro\">{% set runtime = tweaks.get(\"runtime\", {}) %}{% set disclaimer = tweaks.get(\"html\", {}).get(\"top_disclaimer\", \"\") %}{% set disclaimer = disclaimer | replace(\"{date}\", runtime.get(\"date\", \"\")) %}{% set disclaimer = disclaimer | replace(\"{year}\", runtime.get(\"year\", \"\")) %}{% set disclaimer = disclaimer | replace(\"{university_name}\", tweaks.get(\"branding\", {}).get(\"university_name\", \"University\")) %}<div>{{ disclaimer }}</div></section></body></html>""",
+        encoding="utf-8",
+    )
+
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan(plan, "Term 1")
+
+    output_dir = tmp_path / "out"
+    rc = main(
+        [
+            str(plan),
+            "--output-dir",
+            str(output_dir),
+            "--rules-dir",
+            str(rules_dir),
+            "--templates-dir",
+            str(templates_dir),
+            "--config-dir",
+            str(templates_dir / "config"),
+            "--template-overrides-dir",
+            str(local_overrides),
+            "--formats",
+            "html",
+            "--datestamp",
+            "2026-05-28",
+        ]
+    )
+
+    assert rc == 0
+    html = (output_dir / "CEICAH3707_2026_T1.html").read_text(encoding="utf-8")
+    assert "Guide for Test Uni as at 2026-05-28 (2026)" in html
