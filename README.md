@@ -29,6 +29,10 @@ source .venv/bin/activate
 python -m pip install -e .
 ```
 
+Note that you will need
+- the degree rules files to provide some additional metadata about the degree; these are normally located in the `rules` directory and would normally be from the [transition checker rules repository](https://github.com/llimeht/transition-checker-rules) (either a clone or a symlink).
+- the enrolment plans in json format, as extracted by `extract-plans` (or `plan-validate`) using the [transition checker](https://github.com/llimeht/transition-checker) tools (either a symlink to the `plans` directory or specify the path to those outputs)
+
 
 ## Run
 
@@ -69,8 +73,8 @@ sequence-visualiser plans/CEIC/CEICAH3707_2026_*.json \
 
 - `src/sequence_visualiser`: CLI and rendering code
 - `templates`: HTML template, config layers, and assets
-- `rules`: degree rule files used for metadata resolution; this is likely from the (transition checker rules repository)[https://github.com/llimeht/transition-checker-rules]
-- `plans`: input enrolment sequence files; this is likely from the outputs of you running the (transition checker)[https://github.com/llimeht/transition-checker] tools (specifically `plan-validate`)
+- `rules`: degree rule files used for metadata resolution; this is likely from the [transition checker rules repository](https://github.com/llimeht/transition-checker-rules)
+- `plans`: input enrolment sequence files; this is likely from the outputs of you running the [transition checker](https://github.com/llimeht/transition-checker) tools (specifically `plan-validate` or `extract-plans`)
 - `tests`: unit and CLI tests
 - `template-overrides`: your local branded assets including logos, style sheets, course-overrides, colours, footers; ignored by git.
 - `output/`: generated output files; ignored by git.
