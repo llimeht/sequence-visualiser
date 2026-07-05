@@ -20,6 +20,9 @@ _RULE_FILE_RE = re.compile(
     r"^(?P<code>[^.]+?)(?:-(?P<from>\d{4})-(?P<to>\d{4}))?\.json$"
 )
 _PROGRAM_RE = re.compile(r"^(?P<specialisation>[A-Z]{4}[A-Z0-9]{2})(?P<degree>\d{4})$")
+_COMPOSITE_PROGRAM_RE = re.compile(
+    r"^(?P<left>[A-Z]{4}[A-Z0-9]{2}(?P<degree>\d{4}))\+(?P<right>[A-Z]{4}[A-Z0-9]{2}(?P=degree))$"
+)
 
 
 class RuleResolutionError(ValueError):
@@ -33,6 +36,30 @@ class ProgramIdentity:
     plan_code: str
     specialisation_code: str
     degree_code: str
+
+
+def _identity_from_plan_code(candidate: str) -> ProgramIdentity | None:
+    """Build ProgramIdentity from a candidate plan code string, if valid."""
+    normalized = re.sub(r"\s+", "", candidate).upper()
+
+    match = _PROGRAM_RE.match(normalized)
+    if match:
+        return ProgramIdentity(
+            plan_code=normalized,
+            specialisation_code=match.group("specialisation"),
+            degree_code=match.group("degree"),
+        )
+
+    composite_match = _COMPOSITE_PROGRAM_RE.match(normalized)
+    if composite_match:
+        left_code = composite_match.group("left")
+        return ProgramIdentity(
+            plan_code=normalized,
+            specialisation_code=left_code[:-4],
+            degree_code=composite_match.group("degree"),
+        )
+
+    return None
 
 
 def extract_program_identity(plan: Plan) -> ProgramIdentity:
@@ -51,13 +78,9 @@ def extract_program_identity(plan: Plan) -> ProgramIdentity:
         plan.source_path.stem.split("_")[0],
     ]
     for candidate in candidates:
-        match = _PROGRAM_RE.match(candidate)
-        if match:
-            return ProgramIdentity(
-                plan_code=candidate,
-                specialisation_code=match.group("specialisation"),
-                degree_code=match.group("degree"),
-            )
+        identity = _identity_from_plan_code(candidate)
+        if identity is not None:
+            return identity
     raise RuleResolutionError(
         f"Cannot derive program identity from program='{plan.program}' sheet='{plan.sheet}'"
     )
@@ -124,6 +147,19 @@ def resolve_rule_metadata(
     Raises:
         RuleResolutionError: If no suitable rules file is found.
     """
+    for direct_candidate in (
+        plan.sheet.strip(),
+        plan.source_path.stem.split("_")[0],
+        plan.program.strip(),
+    ):
+        direct_identity = _identity_from_plan_code(direct_candidate)
+        if direct_identity is None:
+            continue
+
+        exact_rule = rules_dir / f"{direct_identity.plan_code}.json"
+        if exact_rule.exists():
+            return direct_identity, _load_rule_metadata(exact_rule)
+
     identity = extract_program_identity(plan)
     intake_year = _parse_intake_year(plan.intake)
 
