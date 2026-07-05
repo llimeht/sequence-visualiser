@@ -19,7 +19,7 @@ from .models import Plan, RuleMetadata
 _RULE_FILE_RE = re.compile(
     r"^(?P<code>[^.]+?)(?:-(?P<from>\d{4})-(?P<to>\d{4}))?\.json$"
 )
-_PROGRAM_RE = re.compile(r"^(?P<specialisation>[A-Za-z()]+?)(?P<degree>\d{4})$")
+_PROGRAM_RE = re.compile(r"^(?P<specialisation>[A-Z]{4}[A-Z0-9]{2})(?P<degree>\d{4})$")
 
 
 class RuleResolutionError(ValueError):
