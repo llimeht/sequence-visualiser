@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from _pytest.monkeypatch import MonkeyPatch
+
 from sequence_visualiser.cli import main
 
 
@@ -203,3 +205,90 @@ def test_html_disclaimer_uses_datestamp_tokens(tmp_path: Path) -> None:
     assert rc == 0
     html = (output_dir / "CEICAH3707_2026_T1.html").read_text(encoding="utf-8")
     assert "Guide for Test Uni as at 2026-05-28 (2026)" in html
+
+
+def test_cli_defaults_resolve_from_project_root_not_cwd(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    fake_root = tmp_path / "repo"
+    templates_dir = fake_root / "templates"
+    (templates_dir / "config").mkdir(parents=True)
+    (templates_dir / "config" / "defaults.json").write_text("{}", encoding="utf-8")
+    (templates_dir / "sequence.html.j2").write_text(HTML_TEMPLATE, encoding="utf-8")
+
+    rules_dir = fake_root / "rules"
+    rules_dir.mkdir(parents=True)
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan(plan, "Term 1")
+
+    monkeypatch.setattr("sequence_visualiser.cli._project_root", lambda: fake_root)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    output_dir = tmp_path / "out"
+    rc = main(
+        [
+            str(plan),
+            "--output-dir",
+            str(output_dir),
+            "--formats",
+            "html",
+        ]
+    )
+
+    assert rc == 0
+    assert (output_dir / "CEICAH3707_2026_T1.html").exists()
+
+
+def test_default_overrides_remain_cwd_relative(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    fake_root = tmp_path / "repo"
+    templates_dir = fake_root / "templates"
+    (templates_dir / "config").mkdir(parents=True)
+    (templates_dir / "config" / "defaults.json").write_text("{}", encoding="utf-8")
+    (templates_dir / "sequence.html.j2").write_text(
+        """<!doctype html><html><body>{{ tweaks.get(\"branding\", {}).get(\"university_name\", \"\") }}</body></html>""",
+        encoding="utf-8",
+    )
+
+    rules_dir = fake_root / "rules"
+    rules_dir.mkdir(parents=True)
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan(plan, "Term 1")
+
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "template-overrides" / "config").mkdir(parents=True)
+    (elsewhere / "template-overrides" / "config" / "defaults.json").write_text(
+        '{"branding":{"university_name":"CWD Override Uni"}}',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.cli._project_root", lambda: fake_root)
+    monkeypatch.chdir(elsewhere)
+
+    output_dir = tmp_path / "out"
+    rc = main(
+        [
+            str(plan),
+            "--output-dir",
+            str(output_dir),
+            "--formats",
+            "html",
+        ]
+    )
+
+    assert rc == 0
+    html = (output_dir / "CEICAH3707_2026_T1.html").read_text(encoding="utf-8")
+    assert "CWD Override Uni" in html

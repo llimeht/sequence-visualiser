@@ -67,13 +67,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("plan_files", nargs="+", type=Path, help="Plan JSON file(s)")
     parser.add_argument("--output-dir", type=Path, default=Path("output"))
-    parser.add_argument("--rules-dir", type=Path, default=Path("rules"))
-    parser.add_argument("--templates-dir", type=Path, default=Path("templates"))
-    parser.add_argument("--config-dir", type=Path, default=Path("templates/config"))
+    parser.add_argument("--rules-dir", type=Path)
+    parser.add_argument("--templates-dir", type=Path)
+    parser.add_argument("--config-dir", type=Path)
     parser.add_argument(
         "--template-overrides-dir",
         type=Path,
-        default=Path("template-overrides/config"),
+        default=None,
         help="Template override config directory",
     )
     parser.add_argument(
@@ -96,6 +96,37 @@ def _resolve_datestamp(value: str | None) -> str:
             f"Invalid --datestamp value '{value}': expected YYYY-mm-dd"
         ) from exc
     return parsed.isoformat()
+
+
+def _project_root() -> Path:
+    """Return the project root for resolving bundled defaults."""
+    return Path(__file__).resolve().parents[2]
+
+
+def _resolve_resource_dirs(args: argparse.Namespace) -> tuple[Path, Path, Path, Path]:
+    """Resolve rules/templates/config/override directories.
+
+    When flags are not provided, defaults are resolved relative to the package's
+    project root so CLI execution from any working directory behaves consistently.
+    """
+    root = _project_root()
+
+    rules_dir = args.rules_dir if args.rules_dir is not None else root / "rules"
+    templates_dir = (
+        args.templates_dir if args.templates_dir is not None else root / "templates"
+    )
+    config_dir = (
+        args.config_dir
+        if args.config_dir is not None
+        else templates_dir / "config"
+    )
+    template_overrides_dir = (
+        args.template_overrides_dir
+        if args.template_overrides_dir is not None
+        else Path("template-overrides") / "config"
+    )
+
+    return rules_dir, templates_dir, config_dir, template_overrides_dir
 
 
 def _render_single_plan(
@@ -122,8 +153,7 @@ def _render_single_plan(
     plan = load_plan(plan_file)
     identity, rule_metadata = resolve_rule_metadata(plan, rules_dir)
 
-    local_config_dir = templates_dir.parent / "template-overrides" / "config"
-    course_overrides = load_course_overrides(config_dir, local_config_dir)
+    course_overrides = load_course_overrides(config_dir, template_overrides_dir)
     patched_courses = apply_course_overrides(plan.courses, course_overrides)
     if patched_courses is not plan.courses:
         plan = dataclasses.replace(plan, courses=patched_courses)
@@ -177,6 +207,9 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = _build_parser().parse_args(argv)
     datestamp = _resolve_datestamp(args.datestamp)
+    rules_dir, templates_dir, config_dir, template_overrides_dir = _resolve_resource_dirs(
+        args
+    )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -188,10 +221,10 @@ def main(argv: list[str] | None = None) -> int:
             _render_single_plan(
                 plan_file=plan_file,
                 output_dir=args.output_dir,
-                rules_dir=args.rules_dir,
-                templates_dir=args.templates_dir,
-                config_dir=args.config_dir,
-                template_overrides_dir=args.template_overrides_dir,
+                rules_dir=rules_dir,
+                templates_dir=templates_dir,
+                config_dir=config_dir,
+                template_overrides_dir=template_overrides_dir,
                 formats=args.formats,
                 datestamp=datestamp,
             )
