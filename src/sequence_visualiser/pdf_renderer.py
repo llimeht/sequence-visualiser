@@ -43,6 +43,7 @@ PERIOD_BOX_TOP_GAP = 6
 PERIOD_BOX_BOTTOM_PADDING = 3
 PERIOD_TEXT_TOP_PADDING = 10
 PERIOD_TEXT_BOTTOM_PADDING = 4
+DEFAULT_PERIOD_LABEL_Y_OFFSET_PT = float(PERIOD_LABEL_Y_OFFSET)
 HEADER_META_BOX_WIDTH = 280
 HEADER_META_BOX_HEIGHT = 34
 HEADER_META_BOX_TOP_PADDING = 6
@@ -659,6 +660,14 @@ def _header_layout(pdf_tweaks: dict[str, Any]) -> tuple[float, float, float]:
     return right_width, left_min_width, line_gap
 
 
+def _period_layout(pdf_tweaks: dict[str, Any]) -> float:
+    """Calculate period label vertical offset from the year heading in points."""
+    configured = _float_config(pdf_tweaks.get("period_label_y_offset_pt"))
+    if configured is None:
+        return DEFAULT_PERIOD_LABEL_Y_OFFSET_PT
+    return configured
+
+
 def _header_background_layout(
     pdf_tweaks: dict[str, Any],
 ) -> tuple[colors.Color | None, float, float]:
@@ -760,6 +769,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
     right_header_width, left_header_min_width, header_line_gap = _header_layout(
         pdf_tweaks
     )
+    period_label_y_offset = _period_layout(pdf_tweaks)
     header_background_color, header_height, header_bottom_spacing = _header_background_layout(
         pdf_tweaks
     )
@@ -916,7 +926,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
         c.setFont(cast(str, fonts["body_bold"]), 9)
         c.drawString(margin + 4, y_top - 12, f"{year.enrol_year} ({year.year})")
 
-        period_label_y = y_top - PERIOD_LABEL_Y_OFFSET
+        period_label_y = y_top - period_label_y_offset
         period_box_top = period_label_y - PERIOD_BOX_TOP_GAP
         period_box_bottom = y_bottom + PERIOD_BOX_BOTTOM_PADDING
         period_height = period_box_top - period_box_bottom

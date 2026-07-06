@@ -101,6 +101,9 @@ Supported keys in the current implementation:
 - `pdf.header_bottom_spacing_mm`
   - Optional extra whitespace (in millimetres) below the header boundary.
   - Applied before rendering the top disclaimer/content.
+- `pdf.period_label_y_offset_pt`
+  - Optional vertical offset in points from the year heading to term/semester labels.
+  - Increase this to move term/semester labels lower.
 - `pdf.fonts`
   - Optional role-based PDF font configuration.
   - Font file paths should be relative to `templates/assets/` or `template-overrides/assets/`, or absolute paths.

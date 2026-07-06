@@ -1421,3 +1421,75 @@ def test_render_pdf_header_bottom_spacing_pushes_disclaimer_down(
     # y = (header_bottom - spacing) - font_size
     expected_y = (header_bottom - (8 * mm)) - 8
     assert disclaimer[1] == pytest.approx(expected_y)
+
+
+def test_render_pdf_period_label_y_offset_moves_label_down(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T2.json"
+    term2_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 2",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+
+    base_context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T2",
+            courses=[term2_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+            program_id="3707",
+        ),
+        tweaks={"pdf": {"period_label_y_offset_pt": 20}},
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 2", courses=[term2_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    lower_context = RenderContext(
+        plan=base_context.plan,
+        rule_metadata=base_context.rule_metadata,
+        tweaks={"pdf": {"period_label_y_offset_pt": 26}},
+        years=base_context.years,
+        plan_code=base_context.plan_code,
+        specialisation_code=base_context.specialisation_code,
+        degree_code=base_context.degree_code,
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+
+    render_pdf(base_context, tmp_path / "base.pdf", tmp_path)
+    base_fake = _FakeCanvas.last
+    assert base_fake is not None
+    base_label_y = next(item[1] for item in base_fake.drawn_text if item[2] == "Term 2")
+
+    render_pdf(lower_context, tmp_path / "lower.pdf", tmp_path)
+    lower_fake = _FakeCanvas.last
+    assert lower_fake is not None
+    lower_label_y = next(item[1] for item in lower_fake.drawn_text if item[2] == "Term 2")
+
+    assert lower_label_y < base_label_y
