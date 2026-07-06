@@ -90,6 +90,23 @@ Supported keys in the current implementation:
 - `pdf.header_line_gap_pt`
   - Optional vertical gap between header lines in points.
   - Applies to both left and right header lines.
+- `pdf.fonts`
+  - Optional role-based PDF font configuration.
+  - Font file paths should be relative to `templates/assets/` or `template-overrides/assets/`, or absolute paths.
+  - Supported role groups:
+    - `pdf.fonts.header`
+    - `pdf.fonts.course_codes`
+    - `pdf.fonts.footer`
+    - `pdf.fonts.body`
+  - Supported style keys per role:
+    - `regular`
+    - `bold`
+    - `italic`
+    - `bold_italic`
+  - Header role also supports size keys:
+    - `size` (primary left header line)
+    - `secondary_size` (additional left header lines)
+    - `right_size` (right header lines)
 
 Supported header/footer tokens include:
 
@@ -120,7 +137,23 @@ Example minimal config:
   },
   "pdf": {
     "logo_height_mm": 12,
-    "logo_right_spacing_mm": 8
+    "logo_right_spacing_mm": 8,
+    "fonts": {
+      "header": {
+        "regular": "fonts/Clancy-Regular.ttf",
+        "size": 13
+      },
+      "course_codes": {
+        "regular": "fonts/RobotoMono-Regular.ttf"
+      },
+      "footer": {
+        "regular": "fonts/Roboto-Regular.ttf"
+      },
+      "body": {
+        "regular": "fonts/Roboto-Regular.ttf",
+        "bold": "fonts/Roboto-Bold.ttf"
+      }
+    }
   },
   "html": {
     "title": "Chemical Engineering Sequence",

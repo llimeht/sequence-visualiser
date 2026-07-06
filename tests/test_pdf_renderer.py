@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from _pytest.monkeypatch import MonkeyPatch
 from reportlab.lib.units import mm
+from reportlab.pdfbase.ttfonts import TTFError
 
 from sequence_visualiser.models import (
     Course,
@@ -86,6 +87,7 @@ class _FakeCanvas:
         self.drawn_strings: list[str] = []
         self.drawn_text: list[tuple[float, float, str]] = []
         self.drawn_right_text: list[tuple[float, float, str]] = []
+        self.set_font_calls: list[tuple[str, float]] = []
         self.drawn_images: list[str] = []
         self.form_draw_calls = 0
         self.author = ""
@@ -132,7 +134,7 @@ class _FakeCanvas:
         self.form_draw_calls += 1
 
     def setFont(self, _name: str, _size: float) -> None:  # noqa: N802
-        return
+        self.set_font_calls.append((_name, _size))
 
     def drawString(self, _x: float, _y: float, text: str) -> None:  # noqa: N802
         self.drawn_strings.append(text)
@@ -933,14 +935,19 @@ def test_render_pdf_header_widths_are_configurable(
 
     fit_widths: list[float] = []
 
-    def _fake_fit_text_size(text: str, max_width: float, max_size: int = 8) -> int:
-        _ = (text, max_size)
+    def _fake_fit_text_size(
+        text: str,
+        max_width: float,
+        font_name: str,
+        max_size: int = 8,
+    ) -> int:
+        _ = (text, font_name, max_size)
         fit_widths.append(max_width)
         return 9
 
     monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
     monkeypatch.setattr(
-        "sequence_visualiser.pdf_renderer._fit_text_size", _fake_fit_text_size
+        "sequence_visualiser.pdf_renderer._fit_text_size_for_font", _fake_fit_text_size
     )
     render_pdf(context, tmp_path / "out.pdf", tmp_path)
 
@@ -1007,3 +1014,256 @@ def test_render_pdf_header_line_gap_is_configurable(
 
     assert (l1[1] - l2[1]) == pytest.approx(20)
     assert (r1[1] - r2[1]) == pytest.approx(20)
+
+
+def test_render_pdf_uses_configured_font_roles(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+
+    fonts_dir = tmp_path / "assets" / "fonts"
+    fonts_dir.mkdir(parents=True)
+    for name in (
+        "Clancy-Regular.ttf",
+        "Roboto-Regular.ttf",
+        "Roboto-Bold.ttf",
+        "RobotoMono-Regular.ttf",
+    ):
+        (fonts_dir / name).write_bytes(b"font")
+
+    def _fake_register_font_file(font_path: Path, alias: str) -> str | None:
+        _ = font_path
+        return alias
+
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=["Chemical Engineering"],
+            validity_from="2026",
+            validity_to="2028",
+            program_id="3707",
+        ),
+        tweaks={
+            "branding": {
+                "university_name": "UNSW Sydney",
+            },
+            "pdf": {
+                "header_left_lines": ["{university_name}"],
+                "header_right_lines": ["{program_name}"],
+                "fonts": {
+                    "header": {
+                        "regular": "fonts/Clancy-Regular.ttf",
+                        "size": 13,
+                    },
+                    "course_codes": {
+                        "regular": "fonts/RobotoMono-Regular.ttf",
+                    },
+                    "footer": {
+                        "regular": "fonts/Roboto-Regular.ttf",
+                    },
+                    "body": {
+                        "regular": "fonts/Roboto-Regular.ttf",
+                        "bold": "fonts/Roboto-Bold.ttf",
+                    },
+                },
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    monkeypatch.setattr(
+        "sequence_visualiser.pdf_renderer._register_font_file", _fake_register_font_file
+    )
+    monkeypatch.setattr(
+        "sequence_visualiser.pdf_renderer._fit_text_size_for_font",
+        lambda _text, _max_width, _font_name, max_size=8: max_size,
+    )
+    monkeypatch.setattr(
+        "sequence_visualiser.pdf_renderer.pdfmetrics.stringWidth",
+        lambda text, _font_name, font_size: float(len(text) * font_size),
+    )
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+
+    font_names = {name for name, _size in fake.set_font_calls}
+    assert any(name.startswith("sv_header_regular_") for name in font_names)
+    assert any(name.startswith("sv_course_codes_regular_") for name in font_names)
+    assert any(name.startswith("sv_footer_regular_") for name in font_names)
+    assert any(name.startswith("sv_body_regular_") for name in font_names)
+    assert any(name.startswith("sv_body_bold_") for name in font_names)
+
+    header_font_sizes = [
+        size
+        for name, size in fake.set_font_calls
+        if name.startswith("sv_header_regular_")
+    ]
+    assert any(size <= 13 for size in header_font_sizes)
+
+
+def test_render_pdf_warns_and_falls_back_when_font_missing(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+            program_id="3707",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "header_left_lines": ["UNSW Sydney"],
+                "header_right_lines": ["Program"],
+                "fonts": {
+                    "header": {
+                        "regular": "fonts/does-not-exist.ttf",
+                    }
+                },
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    warnings: list[str] = []
+
+    def _capture_warning(msg: str, *args: object, **kwargs: object) -> None:
+        _ = kwargs
+        warnings.append(msg % args)
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.logger.warning", _capture_warning)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    assert any("header.regular" in warning for warning in warnings)
+    # Fallback for header regular is body regular -> built-in Helvetica.
+    assert any(name == "Helvetica" for name, _size in fake.set_font_calls)
+
+
+def test_render_pdf_warns_and_falls_back_when_font_registration_fails(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    font_dir = tmp_path / "assets" / "fonts"
+    font_dir.mkdir(parents=True)
+    # Content does not matter here because TTFont is monkeypatched to fail.
+    (font_dir / "Clancy-Regular.otf").write_bytes(b"otf")
+
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+            program_id="3707",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "header_left_lines": ["UNSW Sydney"],
+                "header_right_lines": ["Program"],
+                "fonts": {
+                    "header": {
+                        "regular": "fonts/Clancy-Regular.otf",
+                    }
+                },
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    warnings: list[str] = []
+
+    def _capture_warning(msg: str, *args: object, **kwargs: object) -> None:
+        _ = kwargs
+        warnings.append(msg % args)
+
+    def _raise_ttf_error(_alias: str, _path: str) -> object:
+        raise TTFError("postscript outlines are not supported")
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.TTFont", _raise_ttf_error)
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.logger.warning", _capture_warning)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    assert any("failed to register" in warning for warning in warnings)
+    assert any(name == "Helvetica" for name, _size in fake.set_font_calls)

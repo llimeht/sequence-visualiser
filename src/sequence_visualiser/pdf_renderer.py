@@ -6,6 +6,7 @@ Renders plan data to PDF using ReportLab. Handles layout, colours, and branding.
 
 from __future__ import annotations
 
+import logging
 import re
 from importlib import import_module
 from collections.abc import Mapping
@@ -18,9 +19,12 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont, TTFError
 from reportlab.pdfgen import canvas
 
 from .models import Course, RenderContext, YearLayout
+
+logger = logging.getLogger(__name__)
 
 CODE_FONT = "Helvetica-Bold"
 TEXT_FONT = "Helvetica"
@@ -56,6 +60,9 @@ DEFAULT_LOGO_RIGHT_SPACING_PT = 6.0
 DEFAULT_HEADER_RIGHT_WIDTH_PT = float(HEADER_META_BOX_WIDTH)
 DEFAULT_HEADER_LEFT_MIN_WIDTH_PT = 80.0
 DEFAULT_HEADER_LINE_GAP_PT = float(HEADER_META_BOX_LINE_GAP)
+DEFAULT_HEADER_PRIMARY_FONT_SIZE = 12
+DEFAULT_HEADER_SECONDARY_FONT_SIZE = 10
+DEFAULT_HEADER_RIGHT_FONT_SIZE = 9
 DEFAULT_HEADER_LEFT_LINES = ["{university_name}", "{plan_code} - {intake}"]
 DEFAULT_HEADER_RIGHT_LINES = ["Program: {program_name}", "Majors: {majors}"]
 DEFAULT_YEAR_FILL = colors.white
@@ -278,6 +285,23 @@ def _text_lines(value: object) -> list[str]:
     return []
 
 
+def _resolve_asset_path(asset_path: str, templates_dir: Path) -> Path | None:
+    """Resolve an asset path against templates assets and local override assets."""
+    candidate = Path(asset_path)
+    if candidate.is_absolute():
+        return candidate if candidate.exists() else None
+
+    templates_candidate = templates_dir / "assets" / candidate
+    if templates_candidate.exists():
+        return templates_candidate
+
+    overrides_candidate = templates_dir.parent / "template-overrides" / "assets" / candidate
+    if overrides_candidate.exists():
+        return overrides_candidate
+
+    return candidate if candidate.exists() else None
+
+
 def _resolve_logo_path(branding: dict[str, Any], templates_dir: Path) -> Path | None:
     """Resolve the best logo path for PDF output.
 
@@ -291,21 +315,227 @@ def _resolve_logo_path(branding: dict[str, Any], templates_dir: Path) -> Path | 
     if not selected_logo:
         return None
 
-    logo = Path(selected_logo)
-    if logo.is_absolute():
-        return logo if logo.exists() else None
+    return _resolve_asset_path(selected_logo, templates_dir)
 
-    candidate = templates_dir / "assets" / logo
-    if candidate.exists():
-        return candidate
 
-    overrides_candidate = templates_dir.parent / "template-overrides" / "assets" / logo
-    if overrides_candidate.exists():
-        return overrides_candidate
+def _register_font_file(font_path: Path, alias: str) -> str | None:
+    """Register a font file under an alias, returning alias on success."""
+    try:
+        pdfmetrics.getFont(alias)
+        return alias
+    except KeyError:
+        pass
 
-    if logo.exists():
-        return logo
-    return None
+    try:
+        pdfmetrics.registerFont(TTFont(alias, str(font_path)))
+        return alias
+    except (TTFError, ValueError, OSError, TypeError):
+        return None
+
+
+def _configured_font(
+    role_config: dict[str, Any],
+    style: str,
+    fallback_name: str,
+    templates_dir: Path,
+    role_name: str,
+) -> str:
+    """Resolve and register a configured font file, or fallback to built-in font."""
+    configured = str(role_config.get(style, "")).strip()
+    if not configured:
+        return fallback_name
+
+    font_path = _resolve_asset_path(configured, templates_dir)
+    if font_path is None:
+        logger.warning(
+            "Configured PDF font not found for %s.%s: %s (using fallback %s)",
+            role_name,
+            style,
+            configured,
+            fallback_name,
+        )
+        return fallback_name
+
+    alias = f"sv_{role_name}_{style}_{abs(hash(str(font_path.resolve())))}"
+    registered = _register_font_file(font_path, alias)
+    if registered is None:
+        logger.warning(
+            "Configured PDF font failed to register for %s.%s: %s (using fallback %s)",
+            role_name,
+            style,
+            str(font_path),
+            fallback_name,
+        )
+        return fallback_name
+    return registered
+
+
+def _configured_font_size(
+    role_config: dict[str, Any], key: str, fallback: int
+) -> int:
+    """Read a positive integral font size from role config."""
+    configured = _float_config(role_config.get(key))
+    if configured is None:
+        return fallback
+    return max(1, int(round(configured)))
+
+
+def _font_roles(pdf_tweaks: dict[str, Any], templates_dir: Path) -> dict[str, Any]:
+    """Build resolved font families and size settings for PDF rendering."""
+    fonts_config = _colour_mapping(pdf_tweaks, "fonts")
+    header_config = _colour_mapping(fonts_config, "header")
+    course_codes_config = _colour_mapping(fonts_config, "course_codes")
+    footer_config = _colour_mapping(fonts_config, "footer")
+    body_config = _colour_mapping(fonts_config, "body")
+
+    body_regular = _configured_font(
+        body_config,
+        "regular",
+        TEXT_FONT,
+        templates_dir,
+        "body",
+    )
+    body_bold = _configured_font(
+        body_config,
+        "bold",
+        CODE_FONT,
+        templates_dir,
+        "body",
+    )
+    body_italic = _configured_font(
+        body_config,
+        "italic",
+        body_regular,
+        templates_dir,
+        "body",
+    )
+    body_bold_italic = _configured_font(
+        body_config,
+        "bold_italic",
+        body_bold,
+        templates_dir,
+        "body",
+    )
+
+    header_regular = _configured_font(
+        header_config,
+        "regular",
+        body_regular,
+        templates_dir,
+        "header",
+    )
+    header_bold = _configured_font(
+        header_config,
+        "bold",
+        header_regular,
+        templates_dir,
+        "header",
+    )
+
+    course_codes_regular = _configured_font(
+        course_codes_config,
+        "regular",
+        COURSE_CODE_FONT,
+        templates_dir,
+        "course_codes",
+    )
+    course_codes_bold = _configured_font(
+        course_codes_config,
+        "bold",
+        course_codes_regular,
+        templates_dir,
+        "course_codes",
+    )
+    course_codes_italic = _configured_font(
+        course_codes_config,
+        "italic",
+        course_codes_regular,
+        templates_dir,
+        "course_codes",
+    )
+    course_codes_bold_italic = _configured_font(
+        course_codes_config,
+        "bold_italic",
+        course_codes_bold,
+        templates_dir,
+        "course_codes",
+    )
+
+    footer_regular = _configured_font(
+        footer_config,
+        "regular",
+        body_regular,
+        templates_dir,
+        "footer",
+    )
+    footer_bold = _configured_font(
+        footer_config,
+        "bold",
+        body_bold,
+        templates_dir,
+        "footer",
+    )
+    footer_italic = _configured_font(
+        footer_config,
+        "italic",
+        footer_regular,
+        templates_dir,
+        "footer",
+    )
+    footer_bold_italic = _configured_font(
+        footer_config,
+        "bold_italic",
+        footer_bold,
+        templates_dir,
+        "footer",
+    )
+
+    header_primary_size = _configured_font_size(
+        header_config, "size", DEFAULT_HEADER_PRIMARY_FONT_SIZE
+    )
+    header_secondary_size = _configured_font_size(
+        header_config,
+        "secondary_size",
+        DEFAULT_HEADER_SECONDARY_FONT_SIZE,
+    )
+    header_right_size = _configured_font_size(
+        header_config,
+        "right_size",
+        DEFAULT_HEADER_RIGHT_FONT_SIZE,
+    )
+
+    return {
+        "body_regular": body_regular,
+        "body_bold": body_bold,
+        "body_italic": body_italic,
+        "body_bold_italic": body_bold_italic,
+        "header_regular": header_regular,
+        "header_bold": header_bold,
+        "course_codes_regular": course_codes_regular,
+        "course_codes_bold": course_codes_bold,
+        "course_codes_italic": course_codes_italic,
+        "course_codes_bold_italic": course_codes_bold_italic,
+        "footer_regular": footer_regular,
+        "footer_bold": footer_bold,
+        "footer_italic": footer_italic,
+        "footer_bold_italic": footer_bold_italic,
+        "header_primary_size": header_primary_size,
+        "header_secondary_size": header_secondary_size,
+        "header_right_size": header_right_size,
+    }
+
+
+def _fit_text_size_for_font(
+    text: str,
+    max_width: float,
+    font_name: str,
+    max_size: int = TITLE_FONT_MAX,
+) -> int:
+    """Find the largest font size that fits text using a specific font face."""
+    for size in range(max_size, TITLE_FONT_MIN - 1, -1):
+        if pdfmetrics.stringWidth(text, font_name, size) <= max_width:
+            return size
+    return TITLE_FONT_MIN
 
 
 def _float_config(value: object) -> float | None:
@@ -487,6 +717,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
     branding = _colour_mapping(context.tweaks, "branding")
     pdf_tweaks = _colour_mapping(context.tweaks, "pdf")
     colours_tweaks = _colour_mapping(pdf_tweaks, "colours")
+    fonts = _font_roles(pdf_tweaks, templates_dir)
     university_name = str(branding.get("university_name", ""))
     if not university_name:
         university_name = "University"
@@ -544,16 +775,34 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
     )
     left_line_y = top - HEADER_META_BOX_TOP_PADDING
     for index, line in enumerate(left_header_lines):
-        line_max_size = 12 if index == 0 else 10
-        line_font = CODE_FONT if index == 0 else TEXT_FONT
-        line_size = _fit_text_size(line, left_max_width, max_size=line_max_size)
+        line_max_size = (
+            fonts["header_primary_size"]
+            if index == 0
+            else fonts["header_secondary_size"]
+        )
+        line_font = (
+            fonts["header_bold"]
+            if index == 0
+            else fonts["header_regular"]
+        )
+        line_size = _fit_text_size_for_font(
+            line,
+            left_max_width,
+            cast(str, line_font),
+            max_size=cast(int, line_max_size),
+        )
         c.setFont(line_font, line_size)
         c.drawString(title_x, left_line_y - (index * header_line_gap), line)
 
     right_line_y = top - HEADER_META_BOX_TOP_PADDING
     for index, line in enumerate(right_header_lines):
-        line_size = _fit_text_size(line, meta_inner_width, max_size=9)
-        c.setFont(TEXT_FONT, line_size)
+        line_size = _fit_text_size_for_font(
+            line,
+            meta_inner_width,
+            cast(str, fonts["header_regular"]),
+            max_size=cast(int, fonts["header_right_size"]),
+        )
+        c.setFont(cast(str, fonts["header_regular"]), line_size)
         c.drawRightString(
             meta_right_x,
             right_line_y - (index * header_line_gap),
@@ -566,7 +815,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
     top_disclaimer_lines = (
         simpleSplit(  # type: ignore[no-untyped-call]
             top_disclaimer,
-            TEXT_FONT,
+            cast(str, fonts["body_regular"]),
             TOP_DISCLAIMER_FONT_SIZE,
             content_width,
         )
@@ -599,7 +848,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
 
     available_top = top - 46
     if top_disclaimer_lines:
-        c.setFont(TEXT_FONT, TOP_DISCLAIMER_FONT_SIZE)
+        c.setFont(cast(str, fonts["body_regular"]), TOP_DISCLAIMER_FONT_SIZE)
         disclaimer_y = available_top - TOP_DISCLAIMER_FONT_SIZE
         for line in top_disclaimer_lines:
             c.drawString(margin, disclaimer_y, line)
@@ -627,7 +876,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
         c.rect(margin, y_bottom, page_width - (2 * margin), row_height - 5, fill=1)
         c.setFillColor(colors.black)
 
-        c.setFont(CODE_FONT, 9)
+        c.setFont(cast(str, fonts["body_bold"]), 9)
         c.drawString(margin + 4, y_top - 12, f"{year.enrol_year} ({year.year})")
 
         period_label_y = y_top - PERIOD_LABEL_Y_OFFSET
@@ -652,32 +901,38 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
             )
             c.rect(x, period_box_bottom, period_width, period_height, fill=1)
             c.setFillColor(colors.black)
-            c.setFont(CODE_FONT, 8)
+            c.setFont(cast(str, fonts["body_bold"]), 8)
             c.drawString(x + 3, period_label_y, period_label)
 
             text_y = period_box_top - PERIOD_TEXT_TOP_PADDING
             for course in courses:
                 code, title = _display_course(course)
                 code_field = _course_code_field(code)
-                c.setFont(COURSE_CODE_FONT, CODE_FONT_SIZE)
+                c.setFont(cast(str, fonts["course_codes_regular"]), CODE_FONT_SIZE)
                 c.drawString(x + 3, text_y, code_field)
 
                 code_width = pdfmetrics.stringWidth(
-                    " " * COURSE_CODE_CHARS, COURSE_CODE_FONT, CODE_FONT_SIZE
+                    " " * COURSE_CODE_CHARS,
+                    cast(str, fonts["course_codes_regular"]),
+                    CODE_FONT_SIZE,
                 )
                 title_x = x + 3 + code_width + COURSE_CODE_GAP
                 max_title_width = (x + period_width - 3) - title_x
                 if max_title_width <= 5:
                     continue
-                title_size = _fit_text_size(title, max_title_width)
-                c.setFont(TEXT_FONT, title_size)
+                title_size = _fit_text_size_for_font(
+                    title,
+                    max_title_width,
+                    cast(str, fonts["body_regular"]),
+                )
+                c.setFont(cast(str, fonts["body_regular"]), title_size)
                 c.drawString(title_x, text_y, title)
                 text_y -= LINE_HEIGHT
                 if text_y < (period_box_bottom + PERIOD_TEXT_BOTTOM_PADDING):
                     break
 
     if has_footer:
-        c.setFont(TEXT_FONT, FOOTER_FONT_SIZE)
+        c.setFont(cast(str, fonts["footer_regular"]), FOOTER_FONT_SIZE)
         baseline = margin + 2
         # Draw left and right footers line by line, stacked
         # Draw footers so that the first line is at the bottom, subsequent lines above
