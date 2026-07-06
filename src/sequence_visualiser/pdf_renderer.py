@@ -60,6 +60,8 @@ DEFAULT_LOGO_RIGHT_SPACING_PT = 6.0
 DEFAULT_HEADER_RIGHT_WIDTH_PT = float(HEADER_META_BOX_WIDTH)
 DEFAULT_HEADER_LEFT_MIN_WIDTH_PT = 80.0
 DEFAULT_HEADER_LINE_GAP_PT = float(HEADER_META_BOX_LINE_GAP)
+DEFAULT_HEADER_HEIGHT_PT = 66.0
+DEFAULT_HEADER_BOTTOM_SPACING_PT = 0.0
 DEFAULT_HEADER_PRIMARY_FONT_SIZE = 12
 DEFAULT_HEADER_SECONDARY_FONT_SIZE = 10
 DEFAULT_HEADER_RIGHT_FONT_SIZE = 9
@@ -657,6 +659,30 @@ def _header_layout(pdf_tweaks: dict[str, Any]) -> tuple[float, float, float]:
     return right_width, left_min_width, line_gap
 
 
+def _header_background_layout(
+    pdf_tweaks: dict[str, Any],
+) -> tuple[colors.Color | None, float, float]:
+    """Calculate optional header background color, height, and bottom spacing."""
+    color_value = pdf_tweaks.get("header_background_color")
+    header_height_mm = _float_config(pdf_tweaks.get("header_height_mm"))
+    header_bottom_spacing_mm = _float_config(pdf_tweaks.get("header_bottom_spacing_mm"))
+    header_height = (
+        header_height_mm * mm
+        if header_height_mm is not None
+        else DEFAULT_HEADER_HEIGHT_PT
+    )
+    header_bottom_spacing = (
+        header_bottom_spacing_mm * mm
+        if header_bottom_spacing_mm is not None
+        else DEFAULT_HEADER_BOTTOM_SPACING_PT
+    )
+
+    if color_value is None:
+        return None, header_height, header_bottom_spacing
+
+    return _to_color(color_value, colors.white), header_height, header_bottom_spacing
+
+
 def _draw_pdf_logo(
     c: canvas.Canvas,
     logo: Path,
@@ -734,6 +760,17 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
     right_header_width, left_header_min_width, header_line_gap = _header_layout(
         pdf_tweaks
     )
+    header_background_color, header_height, header_bottom_spacing = _header_background_layout(
+        pdf_tweaks
+    )
+    header_height = min(max(header_height, 1.0), page_height)
+    header_bottom = page_height - header_height
+
+    if header_background_color is not None:
+        c.setFillColor(header_background_color)
+        c.rect(0, header_bottom, page_width, header_height, stroke=0, fill=1)
+        c.setFillColor(colors.black)
+
     if logo is not None:
         logo_y = top - logo_height + 2
         if logo.suffix.lower() == ".pdf":
@@ -846,7 +883,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
         (footer_line_count * FOOTER_LINE_HEIGHT) + FOOTER_TOP_GAP if has_footer else 0
     )
 
-    available_top = top - 46
+    available_top = max(margin, header_bottom - header_bottom_spacing)
     if top_disclaimer_lines:
         c.setFont(cast(str, fonts["body_regular"]), TOP_DISCLAIMER_FONT_SIZE)
         disclaimer_y = available_top - TOP_DISCLAIMER_FONT_SIZE

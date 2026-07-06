@@ -84,6 +84,7 @@ class _FakeCanvas:
     def __init__(self, _output_path: str, pagesize: tuple[float, float]) -> None:
         self.pagesize = pagesize
         self.rect_calls: list[tuple[float, float, float, float, int]] = []
+        self.fill_color_calls: list[object] = []
         self.drawn_strings: list[str] = []
         self.drawn_text: list[tuple[float, float, str]] = []
         self.drawn_right_text: list[tuple[float, float, str]] = []
@@ -151,11 +152,18 @@ class _FakeCanvas:
         return
 
     def setFillColor(self, _value: object) -> None:  # noqa: N802
-        return
+        self.fill_color_calls.append(_value)
 
     def rect(
-        self, x: float, y: float, width: float, height: float, fill: int = 0
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        fill: int = 0,
+        stroke: int = 1,
     ) -> None:
+        _ = stroke
         self.rect_calls.append((x, y, width, height, fill))
 
     def showPage(self) -> None:  # noqa: N802
@@ -1267,3 +1275,149 @@ def test_render_pdf_warns_and_falls_back_when_font_registration_fails(
     assert fake is not None
     assert any("failed to register" in warning for warning in warnings)
     assert any(name == "Helvetica" for name, _size in fake.set_font_calls)
+
+
+def test_render_pdf_header_background_spans_page_and_disclaimer_is_below(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+            program_id="3707",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "header_background_color": "#112233",
+                "header_height_mm": 25,
+                "top_disclaimer": "Disclaimer outside header",
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+
+    page_width, page_height = fake.pagesize
+    header_height = 25 * mm
+    header_bottom = page_height - header_height
+
+    assert any(
+        rect[0] == 0
+        and rect[1] == pytest.approx(header_bottom)
+        and rect[2] == pytest.approx(page_width)
+        and rect[3] == pytest.approx(header_height)
+        and rect[4] == 1
+        for rect in fake.rect_calls
+    )
+
+    disclaimer = next(
+        item for item in fake.drawn_text if item[2] == "Disclaimer outside header"
+    )
+    assert disclaimer[1] < header_bottom
+
+
+def test_render_pdf_header_bottom_spacing_pushes_disclaimer_down(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+            program_id="3707",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "header_height_mm": 25,
+                "header_bottom_spacing_mm": 8,
+                "top_disclaimer": "Disclaimer with spacing",
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+
+    _page_width, page_height = fake.pagesize
+    header_bottom = page_height - (25 * mm)
+    disclaimer = next(item for item in fake.drawn_text if item[2] == "Disclaimer with spacing")
+
+    # y = (header_bottom - spacing) - font_size
+    expected_y = (header_bottom - (8 * mm)) - 8
+    assert disclaimer[1] == pytest.approx(expected_y)

@@ -90,6 +90,17 @@ Supported keys in the current implementation:
 - `pdf.header_line_gap_pt`
   - Optional vertical gap between header lines in points.
   - Applies to both left and right header lines.
+- `pdf.header_background_color`
+  - Optional full-width header background color.
+  - Uses the same color formats as other PDF colours (hex string or RGB triple).
+  - Drawn edge-to-edge across the page width.
+- `pdf.header_height_mm`
+  - Optional total header block height in millimetres.
+  - Defines the bottom boundary of the header area.
+  - The top disclaimer is rendered below this boundary.
+- `pdf.header_bottom_spacing_mm`
+  - Optional extra whitespace (in millimetres) below the header boundary.
+  - Applied before rendering the top disclaimer/content.
 - `pdf.fonts`
   - Optional role-based PDF font configuration.
   - Font file paths should be relative to `templates/assets/` or `template-overrides/assets/`, or absolute paths.
