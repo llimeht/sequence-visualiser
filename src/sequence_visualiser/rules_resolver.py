@@ -112,9 +112,12 @@ def _load_rule_metadata(rule_file: Path) -> RuleMetadata:
                 )
 
     program_name = ""
+    program_id = ""
     program_payload = payload.get("program")
     if isinstance(program_payload, Mapping):
-        program_name = str(cast(Mapping[str, Any], program_payload).get("name", ""))
+        typed_program = cast(Mapping[str, Any], program_payload)
+        program_name = str(typed_program.get("name", ""))
+        program_id = str(typed_program.get("id", ""))
 
     validity_payload = payload.get("validity")
     validity: Mapping[str, Any] = (
@@ -131,6 +134,7 @@ def _load_rule_metadata(rule_file: Path) -> RuleMetadata:
         specialisation_names=specialisation_names,
         validity_from=validity_from,
         validity_to=validity_to,
+        program_id=program_id,
     )
 
 

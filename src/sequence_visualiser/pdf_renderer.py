@@ -53,6 +53,11 @@ FOOTER_TOP_GAP = 4
 DEFAULT_LOGO_WIDTH_PT = 24.0
 DEFAULT_LOGO_HEIGHT_PT = 24.0
 DEFAULT_LOGO_RIGHT_SPACING_PT = 6.0
+DEFAULT_HEADER_RIGHT_WIDTH_PT = float(HEADER_META_BOX_WIDTH)
+DEFAULT_HEADER_LEFT_MIN_WIDTH_PT = 80.0
+DEFAULT_HEADER_LINE_GAP_PT = float(HEADER_META_BOX_LINE_GAP)
+DEFAULT_HEADER_LEFT_LINES = ["{university_name}", "{plan_code} - {intake}"]
+DEFAULT_HEADER_RIGHT_LINES = ["Program: {program_name}", "Majors: {majors}"]
 DEFAULT_YEAR_FILL = colors.white
 DEFAULT_TERM_FILLS: dict[str, colors.Color] = {
     "Term 1": colors.HexColor("#f2f2f2"),
@@ -218,14 +223,59 @@ def build_pdf_metadata(context: RenderContext, university_name: str) -> dict[str
 
 def _expand_tokens(text: str, context: RenderContext, university_name: str) -> str:
     """Expand supported text tokens from runtime and branding values."""
+    return _expand_tokens_with_values(text, _token_values(context, university_name))
+
+
+def _token_values(context: RenderContext, university_name: str) -> dict[str, str]:
+    """Return token values used by text templates."""
     runtime = _colour_mapping(context.tweaks, "runtime")
     date_value = str(runtime.get("date", "")).strip() or date.today().isoformat()
     year_value = str(runtime.get("year", "")).strip() or date_value[:4]
-    return (
-        text.replace("{date}", date_value)
-        .replace("{year}", year_value)
-        .replace("{university_name}", university_name)
+    majors_text = (
+        ", ".join(context.rule_metadata.specialisation_names)
+        if context.rule_metadata.specialisation_names
+        else "None"
     )
+    return {
+        "date": date_value,
+        "year": year_value,
+        "university_name": university_name,
+        "plan_code": context.plan_code,
+        "program_code": context.rule_metadata.program_id or context.plan_code,
+        "intake": context.plan.intake,
+        "program_name": context.rule_metadata.program_name,
+        "majors": majors_text,
+        "degree_code": context.degree_code,
+        "specialisation_code": context.specialisation_code,
+        "rule_file": context.rule_metadata.rule_file.name,
+    }
+
+
+def _expand_tokens_with_values(text: str, tokens: Mapping[str, str]) -> str:
+    """Expand supported {token} placeholders in text."""
+    expanded = text
+    for token, value in tokens.items():
+        expanded = expanded.replace(f"{{{token}}}", value)
+    return expanded
+
+
+def _text_lines(value: object) -> list[str]:
+    """Normalise config text into non-empty lines.
+
+    Supported forms:
+    - string (split by lines)
+    - list/tuple (each item converted to string)
+    """
+    if isinstance(value, str):
+        return [line.strip() for line in value.splitlines() if line.strip()]
+    if isinstance(value, (list, tuple)):
+        lines: list[str] = []
+        for item in value:
+            line = str(item).strip()
+            if line:
+                lines.append(line)
+        return lines
+    return []
 
 
 def _resolve_logo_path(branding: dict[str, Any], templates_dir: Path) -> Path | None:
@@ -353,6 +403,30 @@ def _logo_layout(pdf_tweaks: dict[str, Any], logo: Path | None) -> tuple[float, 
     return DEFAULT_LOGO_WIDTH_PT, DEFAULT_LOGO_HEIGHT_PT, spacing
 
 
+def _header_layout(pdf_tweaks: dict[str, Any]) -> tuple[float, float, float]:
+    """Calculate right header width, left minimum width (mm), and line gap (pt)."""
+    header_right_width_mm = _float_config(pdf_tweaks.get("header_right_width_mm"))
+    header_left_min_width_mm = _float_config(pdf_tweaks.get("header_left_min_width_mm"))
+    header_line_gap_pt = _float_config(pdf_tweaks.get("header_line_gap_pt"))
+
+    right_width = (
+        header_right_width_mm * mm
+        if header_right_width_mm is not None
+        else DEFAULT_HEADER_RIGHT_WIDTH_PT
+    )
+    left_min_width = (
+        header_left_min_width_mm * mm
+        if header_left_min_width_mm is not None
+        else DEFAULT_HEADER_LEFT_MIN_WIDTH_PT
+    )
+    line_gap = (
+        header_line_gap_pt
+        if header_line_gap_pt is not None
+        else DEFAULT_HEADER_LINE_GAP_PT
+    )
+    return right_width, left_min_width, line_gap
+
+
 def _draw_pdf_logo(
     c: canvas.Canvas,
     logo: Path,
@@ -416,6 +490,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
     university_name = str(branding.get("university_name", ""))
     if not university_name:
         university_name = "University"
+    tokens = _token_values(context, university_name)
 
     metadata = build_pdf_metadata(context, university_name)
     c.setTitle(metadata["title"])
@@ -425,6 +500,9 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
 
     logo = _resolve_logo_path(branding, templates_dir)
     logo_width, logo_height, logo_spacing = _logo_layout(pdf_tweaks, logo)
+    right_header_width, left_header_min_width, header_line_gap = _header_layout(
+        pdf_tweaks
+    )
     if logo is not None:
         logo_y = top - logo_height + 2
         if logo.suffix.lower() == ".pdf":
@@ -441,37 +519,46 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
             )
 
     title_x = margin + logo_width + logo_spacing if logo is not None else margin
-    c.setFont(CODE_FONT, 12)
-    c.drawString(title_x, top - 6, university_name)
-    c.setFont(TEXT_FONT, 10)
-    c.drawString(title_x, top - 22, f"{context.plan_code} - {context.plan.intake}")
+    left_header_templates = _text_lines(pdf_tweaks.get("header_left_lines"))
+    if not left_header_templates:
+        left_header_templates = list(DEFAULT_HEADER_LEFT_LINES)
+    right_header_templates = _text_lines(pdf_tweaks.get("header_right_lines"))
+    if not right_header_templates:
+        right_header_templates = list(DEFAULT_HEADER_RIGHT_LINES)
 
-    majors_text = (
-        ", ".join(context.rule_metadata.specialisation_names)
-        if context.rule_metadata.specialisation_names
-        else "None"
-    )
+    left_header_lines = [
+        _expand_tokens_with_values(line, tokens) for line in left_header_templates
+    ]
+    right_header_lines = [
+        _expand_tokens_with_values(line, tokens) for line in right_header_templates
+    ]
 
     meta_right_x = page_width - margin - HEADER_META_BOX_RIGHT_PADDING
-    program_line = f"Program: {context.rule_metadata.program_name}"
-    majors_line = f"Majors: {majors_text}"
-
-    meta_inner_width = HEADER_META_BOX_WIDTH - (2 * HEADER_META_BOX_RIGHT_PADDING)
-    program_size = _fit_text_size(program_line, meta_inner_width, max_size=9)
-    majors_size = _fit_text_size(majors_line, meta_inner_width, max_size=9)
-
-    c.setFont(TEXT_FONT, program_size)
-    c.drawRightString(
-        meta_right_x,
-        top - HEADER_META_BOX_TOP_PADDING,
-        program_line,
+    meta_inner_width = max(
+        10.0,
+        right_header_width - (2 * HEADER_META_BOX_RIGHT_PADDING),
     )
-    c.setFont(TEXT_FONT, majors_size)
-    c.drawRightString(
-        meta_right_x,
-        top - HEADER_META_BOX_TOP_PADDING - HEADER_META_BOX_LINE_GAP,
-        majors_line,
+    left_max_width = max(
+        left_header_min_width,
+        (meta_right_x - meta_inner_width) - title_x - 8,
     )
+    left_line_y = top - HEADER_META_BOX_TOP_PADDING
+    for index, line in enumerate(left_header_lines):
+        line_max_size = 12 if index == 0 else 10
+        line_font = CODE_FONT if index == 0 else TEXT_FONT
+        line_size = _fit_text_size(line, left_max_width, max_size=line_max_size)
+        c.setFont(line_font, line_size)
+        c.drawString(title_x, left_line_y - (index * header_line_gap), line)
+
+    right_line_y = top - HEADER_META_BOX_TOP_PADDING
+    for index, line in enumerate(right_header_lines):
+        line_size = _fit_text_size(line, meta_inner_width, max_size=9)
+        c.setFont(TEXT_FONT, line_size)
+        c.drawRightString(
+            meta_right_x,
+            right_line_y - (index * header_line_gap),
+            line,
+        )
 
     content_width = page_width - (2 * margin)
     top_disclaimer_raw = str(pdf_tweaks.get("top_disclaimer", "")).strip()

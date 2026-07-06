@@ -441,6 +441,7 @@ def test_render_pdf_header_includes_program_and_majors(
             specialisation_names=["Artificial Intelligence", "Security"],
             validity_from="2026",
             validity_to="2028",
+            program_id="3707",
         ),
         tweaks={"branding": {"university_name": "UNSW Sydney"}},
         years=[
@@ -464,6 +465,79 @@ def test_render_pdf_header_includes_program_and_majors(
     right_aligned = {item[2] for item in fake.drawn_right_text}
     assert "Program: Bachelor of Advanced Computing" in right_aligned
     assert "Majors: Artificial Intelligence, Security" in right_aligned
+
+
+def test_render_pdf_header_lines_can_be_swapped_via_config(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=["Artificial Intelligence", "Security"],
+            validity_from="2026",
+            validity_to="2028",
+            program_id="3707",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "header_left_lines": [
+                    "Program: {program_name}",
+                    "Majors: {majors}",
+                ],
+                "header_right_lines": [
+                    "{university_name}",
+                    "{program_code} - {intake}",
+                ],
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+
+    left_aligned = {item[2] for item in fake.drawn_text}
+    right_aligned = {item[2] for item in fake.drawn_right_text}
+
+    assert "Program: Bachelor of Advanced Computing" in left_aligned
+    assert "Majors: Artificial Intelligence, Security" in left_aligned
+    assert "UNSW Sydney" in right_aligned
+    assert "3707 - 2026 T1" in right_aligned
 
 
 def test_render_pdf_year_label_includes_calendar_year(
@@ -811,3 +885,125 @@ def test_render_pdf_logo_width_mm_passed_to_pdf_logo_draw(
     assert len(captured) == 1
     assert captured[0][0] == pytest.approx(25 * mm)
     assert captured[0][1] == pytest.approx((25 * mm) / 2.0)
+
+
+def test_render_pdf_header_widths_are_configurable(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+            program_id="3707",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "header_left_lines": ["Left"],
+                "header_right_lines": ["Right"],
+                "header_right_width_mm": 200,
+                "header_left_min_width_mm": 120,
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    fit_widths: list[float] = []
+
+    def _fake_fit_text_size(text: str, max_width: float, max_size: int = 8) -> int:
+        _ = (text, max_size)
+        fit_widths.append(max_width)
+        return 9
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    monkeypatch.setattr(
+        "sequence_visualiser.pdf_renderer._fit_text_size", _fake_fit_text_size
+    )
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    assert len(fit_widths) >= 2
+    # First call: left header width uses configured minimum width.
+    assert fit_widths[0] == pytest.approx(120 * mm)
+    # Second call: right header width uses configured right box width minus paddings.
+    assert fit_widths[1] == pytest.approx((200 * mm) - (2 * 8))
+
+
+def test_render_pdf_header_line_gap_is_configurable(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+            program_id="3707",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "header_left_lines": ["L1", "L2"],
+                "header_right_lines": ["R1", "R2"],
+                "header_line_gap_pt": 20,
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+
+    l1 = next(item for item in fake.drawn_text if item[2] == "L1")
+    l2 = next(item for item in fake.drawn_text if item[2] == "L2")
+    r1 = next(item for item in fake.drawn_right_text if item[2] == "R1")
+    r2 = next(item for item in fake.drawn_right_text if item[2] == "R2")
+
+    assert (l1[1] - l2[1]) == pytest.approx(20)
+    assert (r1[1] - r2[1]) == pytest.approx(20)

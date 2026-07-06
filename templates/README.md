@@ -69,6 +69,41 @@ Supported keys in the current implementation:
 - `pdf.logo_right_spacing_mm`
   - Optional horizontal whitespace (in millimetres) between the logo and the left header text.
   - If omitted, a small built-in spacing is used.
+- `pdf.header_left_lines`
+  - Optional lines for the left side of the PDF header.
+  - Accepts either an array of strings or a newline-separated string.
+  - Defaults to:
+    - `{university_name}`
+    - `{plan_code} - {intake}`
+- `pdf.header_right_lines`
+  - Optional lines for the right side of the PDF header.
+  - Accepts either an array of strings or a newline-separated string.
+  - Defaults to:
+    - `Program: {program_name}`
+    - `Majors: {majors}`
+- `pdf.header_right_width_mm`
+  - Optional width of the right header text box in millimetres.
+  - Larger values reserve more space for right-aligned header text.
+- `pdf.header_left_min_width_mm`
+  - Optional minimum width of the left header text area in millimetres.
+  - Useful when the logo or right header box would otherwise squeeze left text.
+- `pdf.header_line_gap_pt`
+  - Optional vertical gap between header lines in points.
+  - Applies to both left and right header lines.
+
+Supported header/footer tokens include:
+
+- `{date}`
+- `{year}`
+- `{university_name}`
+- `{plan_code}`
+- `{program_code}` (from rules `program.id`; falls back to `{plan_code}` if missing)
+- `{intake}`
+- `{program_name}`
+- `{majors}`
+- `{degree_code}`
+- `{specialisation_code}`
+- `{rule_file}`
 - `html.title`
   - HTML `<title>` value.
 - `html.heading`

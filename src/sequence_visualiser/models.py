@@ -47,6 +47,7 @@ class RuleMetadata:
     specialisation_names: list[str]
     validity_from: str
     validity_to: str
+    program_id: str = ""
 
 
 @dataclass(frozen=True)
