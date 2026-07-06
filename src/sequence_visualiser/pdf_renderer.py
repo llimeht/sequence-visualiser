@@ -7,6 +7,7 @@ Renders plan data to PDF using ReportLab. Handles layout, colours, and branding.
 from __future__ import annotations
 
 import re
+from importlib import import_module
 from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
@@ -14,7 +15,8 @@ from typing import Any, cast
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.utils import simpleSplit
+from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
@@ -48,6 +50,9 @@ TOP_DISCLAIMER_BOTTOM_GAP = 6
 FOOTER_FONT_SIZE = 8
 FOOTER_LINE_HEIGHT = 10
 FOOTER_TOP_GAP = 4
+DEFAULT_LOGO_WIDTH_PT = 24.0
+DEFAULT_LOGO_HEIGHT_PT = 24.0
+DEFAULT_LOGO_RIGHT_SPACING_PT = 6.0
 DEFAULT_YEAR_FILL = colors.white
 DEFAULT_TERM_FILLS: dict[str, colors.Color] = {
     "Term 1": colors.HexColor("#f2f2f2"),
@@ -223,6 +228,174 @@ def _expand_tokens(text: str, context: RenderContext, university_name: str) -> s
     )
 
 
+def _resolve_logo_path(branding: dict[str, Any], templates_dir: Path) -> Path | None:
+    """Resolve the best logo path for PDF output.
+
+    Preference order for PDF rendering:
+    1. branding.logo_path_pdf
+    2. branding.logo_path
+    """
+    logo_path_pdf = str(branding.get("logo_path_pdf", "")).strip()
+    logo_path = str(branding.get("logo_path", "")).strip()
+    selected_logo = logo_path_pdf or logo_path
+    if not selected_logo:
+        return None
+
+    logo = Path(selected_logo)
+    if logo.is_absolute():
+        return logo if logo.exists() else None
+
+    candidate = templates_dir / "assets" / logo
+    if candidate.exists():
+        return candidate
+
+    overrides_candidate = templates_dir.parent / "template-overrides" / "assets" / logo
+    if overrides_candidate.exists():
+        return overrides_candidate
+
+    if logo.exists():
+        return logo
+    return None
+
+
+def _float_config(value: object) -> float | None:
+    """Return a positive float for numeric config values, otherwise None."""
+    if isinstance(value, bool):
+        return None
+    if not isinstance(value, (int, float, str)):
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    return numeric if numeric > 0 else None
+
+
+def _pdf_logo_aspect_ratio(logo: Path) -> float:
+    """Return width/height ratio of the first page of a PDF logo."""
+    pdfrw = import_module("pdfrw")
+    reader: Any = getattr(pdfrw, "PdfReader")
+
+    pages = reader(str(logo)).pages
+    if not pages:
+        raise PdfRenderError(f"Logo PDF has no pages: {logo}")
+    page = pages[0]
+    media_box = cast(list[float], getattr(page, "MediaBox", []))
+    if len(media_box) < 4:
+        raise PdfRenderError(f"Logo PDF has invalid page bounds: {logo}")
+    src_x0, src_y0, src_x1, src_y1 = (
+        float(media_box[0]),
+        float(media_box[1]),
+        float(media_box[2]),
+        float(media_box[3]),
+    )
+    src_width = src_x1 - src_x0
+    src_height = src_y1 - src_y0
+    if src_width <= 0 or src_height <= 0:
+        raise PdfRenderError(f"Logo PDF has non-positive dimensions: {logo}")
+    return src_width / src_height
+
+
+def _image_logo_aspect_ratio(logo: Path) -> float:
+    """Return width/height ratio for a raster logo."""
+    image = ImageReader(str(logo))
+    width, height = cast(tuple[float, float], image.getSize())
+    if width <= 0 or height <= 0:
+        raise PdfRenderError(f"Logo image has non-positive dimensions: {logo}")
+    return width / height
+
+
+def _logo_aspect_ratio(logo: Path) -> float:
+    """Return width/height ratio for a logo asset."""
+    if logo.suffix.lower() == ".pdf":
+        return _pdf_logo_aspect_ratio(logo)
+    return _image_logo_aspect_ratio(logo)
+
+
+def _logo_layout(pdf_tweaks: dict[str, Any], logo: Path | None) -> tuple[float, float, float]:
+    """Calculate logo width/height and right-side spacing in points.
+
+    Width and height config values are in mm.
+    If exactly one dimension is set and a logo exists, the other is scaled to preserve
+    the logo aspect ratio.
+    """
+    logo_width_mm = _float_config(pdf_tweaks.get("logo_width_mm"))
+    logo_height_mm = _float_config(pdf_tweaks.get("logo_height_mm"))
+    logo_spacing_mm = _float_config(pdf_tweaks.get("logo_right_spacing_mm"))
+
+    logo_width = logo_width_mm * mm if logo_width_mm is not None else None
+    logo_height = logo_height_mm * mm if logo_height_mm is not None else None
+    spacing = (
+        logo_spacing_mm * mm
+        if logo_spacing_mm is not None
+        else DEFAULT_LOGO_RIGHT_SPACING_PT
+    )
+
+    if logo_width is None and logo_height is None:
+        return DEFAULT_LOGO_WIDTH_PT, DEFAULT_LOGO_HEIGHT_PT, spacing
+
+    if logo is None:
+        return (
+            logo_width if logo_width is not None else DEFAULT_LOGO_WIDTH_PT,
+            logo_height if logo_height is not None else DEFAULT_LOGO_HEIGHT_PT,
+            spacing,
+        )
+
+    if logo_width is not None and logo_height is not None:
+        return logo_width, logo_height, spacing
+
+    ratio = _logo_aspect_ratio(logo)
+    if logo_width is not None:
+        return logo_width, logo_width / ratio, spacing
+    if logo_height is not None:
+        return logo_height * ratio, logo_height, spacing
+
+    return DEFAULT_LOGO_WIDTH_PT, DEFAULT_LOGO_HEIGHT_PT, spacing
+
+
+def _draw_pdf_logo(
+    c: canvas.Canvas,
+    logo: Path,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+) -> None:
+    """Draw the first page of a PDF logo as vector content into the target box."""
+    pdfrw = import_module("pdfrw")
+    reader: Any = getattr(pdfrw, "PdfReader")
+    buildxobj: Any = import_module("pdfrw.buildxobj")
+    toreportlab: Any = import_module("pdfrw.toreportlab")
+
+    pages = reader(str(logo)).pages
+    if not pages:
+        raise PdfRenderError(f"Logo PDF has no pages: {logo}")
+
+    page_xobj = buildxobj.pagexobj(pages[0])
+    bbox = cast(list[float], page_xobj.BBox)
+    if len(bbox) < 4:
+        raise PdfRenderError(f"Logo PDF has invalid page bounds: {logo}")
+
+    src_x0, src_y0, src_x1, src_y1 = bbox[0], bbox[1], bbox[2], bbox[3]
+    src_width = src_x1 - src_x0
+    src_height = src_y1 - src_y0
+    if src_width <= 0 or src_height <= 0:
+        raise PdfRenderError(f"Logo PDF has non-positive dimensions: {logo}")
+
+    scale = min(width / src_width, height / src_height)
+    draw_width = src_width * scale
+    draw_height = src_height * scale
+    draw_x = x + ((width - draw_width) / 2)
+    draw_y = y + ((height - draw_height) / 2)
+
+    c.saveState()
+    c.translate(draw_x, draw_y)
+    c.scale(scale, scale)
+    c.translate(-src_x0, -src_y0)
+    c.doForm(toreportlab.makerl(c, page_xobj))
+    c.restoreState()
+
+
 def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -> None:
     """Render the plan context to a PDF file using ReportLab.
 
@@ -250,34 +423,24 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
     c.setAuthor(metadata["author"])
     c.setCreator(metadata["creator"])
 
-    logo_path = str(branding.get("logo_path", "")).strip()
-
-    if logo_path:
-        logo = Path(logo_path)
-        if not logo.is_absolute():
-            # Only use 'assets' (in overrides or templates)
-            candidate = templates_dir / "assets" / logo
-            if not candidate.exists():
-                # Try parallel template-overrides/assets
-                overrides_candidate = (
-                    templates_dir.parent / "template-overrides" / "assets" / logo
-                )
-                if overrides_candidate.exists():
-                    candidate = overrides_candidate
-            if candidate.exists():
-                logo = candidate
-        if logo.exists():
+    logo = _resolve_logo_path(branding, templates_dir)
+    logo_width, logo_height, logo_spacing = _logo_layout(pdf_tweaks, logo)
+    if logo is not None:
+        logo_y = top - logo_height + 2
+        if logo.suffix.lower() == ".pdf":
+            _draw_pdf_logo(c, logo, margin, logo_y, width=logo_width, height=logo_height)
+        else:
             canvas_any = cast(Any, c)
             canvas_any.drawImage(
                 str(logo),
                 margin,
-                top - 22,
-                width=24,
-                height=24,
+                logo_y,
+                width=logo_width,
+                height=logo_height,
                 preserveAspectRatio=True,
             )
 
-    title_x = margin + 30
+    title_x = margin + logo_width + logo_spacing if logo is not None else margin
     c.setFont(CODE_FONT, 12)
     c.drawString(title_x, top - 6, university_name)
     c.setFont(TEXT_FONT, 10)

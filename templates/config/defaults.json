@@ -1,7 +1,8 @@
 {
   "branding": {
     "university_name": "University Name",
-    "logo_path": "university-logo.png"
+    "logo_path": "university-logo.png",
+    "logo_path_pdf": "university-logo.pdf"
   },
   "html": {
     "title": "Enrolment Sequence",

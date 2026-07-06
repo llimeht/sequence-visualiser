@@ -1,6 +1,8 @@
 from pathlib import Path
 
+import pytest
 from _pytest.monkeypatch import MonkeyPatch
+from reportlab.lib.units import mm
 
 from sequence_visualiser.models import (
     Course,
@@ -84,6 +86,8 @@ class _FakeCanvas:
         self.drawn_strings: list[str] = []
         self.drawn_text: list[tuple[float, float, str]] = []
         self.drawn_right_text: list[tuple[float, float, str]] = []
+        self.drawn_images: list[str] = []
+        self.form_draw_calls = 0
         self.author = ""
         self.creator = ""
         _FakeCanvas.last = self
@@ -109,7 +113,23 @@ class _FakeCanvas:
         height: float,
         preserveAspectRatio: bool = False,  # noqa: N803
     ) -> None:
+        self.drawn_images.append(_image)
         _ = (width, height, preserveAspectRatio)
+
+    def saveState(self) -> None:  # noqa: N802
+        return
+
+    def restoreState(self) -> None:  # noqa: N802
+        return
+
+    def translate(self, _x: float, _y: float) -> None:
+        return
+
+    def scale(self, _x: float, _y: float) -> None:
+        return
+
+    def doForm(self, _form: object) -> None:  # noqa: N802
+        self.form_draw_calls += 1
 
     def setFont(self, _name: str, _size: float) -> None:  # noqa: N802
         return
@@ -497,3 +517,297 @@ def test_render_pdf_year_label_includes_calendar_year(
     fake = _FakeCanvas.last
     assert fake is not None
     assert "Year 1 (2026)" in fake.drawn_strings
+
+
+def test_render_pdf_prefers_logo_path_pdf_when_present(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir(parents=True)
+    (assets_dir / "brand-logo.pdf").write_text("%PDF-1.4", encoding="utf-8")
+    (assets_dir / "brand-logo.png").write_bytes(b"png")
+
+    called_logo: list[Path] = []
+
+    def _fake_draw_pdf_logo(
+        _canvas: _FakeCanvas,
+        logo: Path,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+    ) -> None:
+        called_logo.append(logo)
+        _ = (x, y, width, height)
+
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "branding": {
+                "logo_path": "brand-logo.png",
+                "logo_path_pdf": "brand-logo.pdf",
+            }
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    monkeypatch.setattr(
+        "sequence_visualiser.pdf_renderer._draw_pdf_logo", _fake_draw_pdf_logo
+    )
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    assert called_logo == [assets_dir / "brand-logo.pdf"]
+    assert fake.drawn_images == []
+
+
+def test_render_pdf_uses_raster_logo_when_pdf_logo_not_configured(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir(parents=True)
+    (assets_dir / "brand-logo.png").write_bytes(b"png")
+
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={"branding": {"logo_path": "brand-logo.png"}},
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    assert fake.drawn_images == [str(assets_dir / "brand-logo.png")]
+
+
+def test_render_pdf_logo_height_mm_scales_width_and_applies_spacing(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir(parents=True)
+    (assets_dir / "brand-logo.png").write_bytes(b"png")
+
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "branding": {
+                "university_name": "UNSW Sydney",
+                "logo_path": "brand-logo.png",
+            },
+            "pdf": {
+                "logo_height_mm": 12,
+                "logo_right_spacing_mm": 9,
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer._logo_aspect_ratio", lambda _logo: 2.0)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    assert len(fake.drawn_images) == 1
+
+    logo_call = next(item for item in fake.drawn_text if item[2] == "UNSW Sydney")
+    expected_logo_width = (12 * mm) * 2.0
+    expected_spacing = 9 * mm
+    expected_title_x = 20 + expected_logo_width + expected_spacing
+    assert logo_call[0] == pytest.approx(expected_title_x)
+
+
+def test_render_pdf_logo_width_mm_passed_to_pdf_logo_draw(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir(parents=True)
+    (assets_dir / "brand-logo.pdf").write_text("%PDF-1.4", encoding="utf-8")
+
+    captured: list[tuple[float, float]] = []
+
+    def _fake_draw_pdf_logo(
+        _canvas: _FakeCanvas,
+        _logo: Path,
+        _x: float,
+        _y: float,
+        width: float,
+        height: float,
+    ) -> None:
+        captured.append((width, height))
+
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "branding": {
+                "logo_path_pdf": "brand-logo.pdf",
+            },
+            "pdf": {
+                "logo_width_mm": 25,
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    monkeypatch.setattr(
+        "sequence_visualiser.pdf_renderer._draw_pdf_logo", _fake_draw_pdf_logo
+    )
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer._logo_aspect_ratio", lambda _logo: 2.0)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    assert len(captured) == 1
+    assert captured[0][0] == pytest.approx(25 * mm)
+    assert captured[0][1] == pytest.approx((25 * mm) / 2.0)

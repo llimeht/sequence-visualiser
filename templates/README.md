@@ -52,9 +52,23 @@ Supported keys in the current implementation:
 - `branding.university_name`
   - Used by PDF header text.
 - `branding.logo_path`
-  - Used by PDF logo lookup.
-  - Relative paths are checked in `templates/local-assets/` first, then `templates/assets/`.
+  - Used by PDF logo lookup when `branding.logo_path_pdf` is not set.
+  - Relative paths are checked in `templates/assets/`, then `template-overrides/assets/`.
   - Absolute paths are used directly.
+- `branding.logo_path_pdf`
+  - Preferred logo for PDF rendering.
+  - Supports PDF assets (vector) and is used ahead of `branding.logo_path` when present.
+  - Relative paths are checked in `templates/assets/`, then `template-overrides/assets/`.
+  - Absolute paths are used directly.
+- `pdf.logo_width_mm`
+  - Optional logo width for PDF rendering, in millimetres.
+  - If `pdf.logo_height_mm` is omitted, the renderer scales height from the logo aspect ratio.
+- `pdf.logo_height_mm`
+  - Optional logo height for PDF rendering, in millimetres.
+  - If `pdf.logo_width_mm` is omitted, the renderer scales width from the logo aspect ratio.
+- `pdf.logo_right_spacing_mm`
+  - Optional horizontal whitespace (in millimetres) between the logo and the left header text.
+  - If omitted, a small built-in spacing is used.
 - `html.title`
   - HTML `<title>` value.
 - `html.heading`
@@ -66,7 +80,12 @@ Example minimal config:
 {
   "branding": {
     "university_name": "Example University",
-    "logo_path": "example-logo.png"
+    "logo_path": "example-logo.png",
+    "logo_path_pdf": "example-logo.pdf"
+  },
+  "pdf": {
+    "logo_height_mm": 12,
+    "logo_right_spacing_mm": 8
   },
   "html": {
     "title": "Chemical Engineering Sequence",
