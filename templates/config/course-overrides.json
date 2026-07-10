@@ -1,19 +1,19 @@
 {
   "_comment": "Maps incoming course codes (matched case-insensitively) to display overrides. Omit 'code' to keep the original; set to '' to suppress it. Omit 'title' to keep the original.",
   "GenEd1": {
-    "code": "",
+    "code": "Elective",
     "title": "Cross-disciplinary (XD) Elective"
   },
   "GenEd2": {
-    "code": "",
+    "code": "Elective",
     "title": "Cross-disciplinary (XD) Elective"
   },
   "FREE1": {
-    "code": "",
+    "code": "Elective",
     "title": "Free Elective (any course)"
   },
   "FREE2": {
-    "code": "",
+    "code": "Elective",
     "title": "Free Elective (any course)"
   }
 }
