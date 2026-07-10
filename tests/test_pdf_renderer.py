@@ -91,6 +91,7 @@ class _FakeCanvas:
         self.set_font_calls: list[tuple[str, float]] = []
         self.drawn_images: list[str] = []
         self.form_draw_calls = 0
+        self.show_page_calls = 0
         self.author = ""
         self.creator = ""
         _FakeCanvas.last = self
@@ -167,6 +168,7 @@ class _FakeCanvas:
         self.rect_calls.append((x, y, width, height, fill))
 
     def showPage(self) -> None:  # noqa: N802
+        self.show_page_calls += 1
         return
 
     def save(self) -> None:
@@ -389,11 +391,11 @@ def test_render_pdf_renders_disclaimer_and_footers(
             "runtime": {"date": "2026-05-28", "year": "2026"},
             "pdf": {
                 "top_disclaimer": (
-                    "Guide only for {university_name} in {intake_year} {intake_period} "
-                    "({intake.year} {intake.period}) on {date}."
+                    "Guide only for {{ tokens.university_name }} in {{ tokens.intake_year }} {{ tokens.intake_period }} "
+                    "on {{ tokens.date }}."
                 ),
-                "footer_left": "Check handbook for {intake_year}.",
-                "footer_right": "Information correct as at {date}\\nCopyright © {university_name} {year}",
+                "footer_left": "Check handbook for {{ tokens.intake_year }}.",
+                "footer_right": "Information correct as at {{ tokens.date }}\\nCopyright © {{ tokens.university_name }} {{ tokens.year }}",
             },
         },
         years=[
@@ -415,7 +417,7 @@ def test_render_pdf_renders_disclaimer_and_footers(
     fake = _FakeCanvas.last
     assert fake is not None
     assert (
-        "Guide only for UNSW Sydney in 2026 T1 (2026 T1) on 2026-05-28."
+        "Guide only for UNSW Sydney in 2026 T1 on 2026-05-28."
         in fake.drawn_strings
     )
     assert "Check handbook for 2026." in fake.drawn_strings
@@ -520,12 +522,12 @@ def test_render_pdf_header_lines_can_be_swapped_via_config(
             "branding": {"university_name": "UNSW Sydney"},
             "pdf": {
                 "header_left_lines": [
-                    "Program: {program_name}",
-                    "Majors: {majors}",
+                    "Program: {{ tokens.program_name }}",
+                    "Majors: {{ tokens.majors }}",
                 ],
                 "header_right_lines": [
-                    "{university_name}",
-                    "{program_code} {plan_description} - {intake}",
+                    "{{ tokens.university_name }}",
+                    "{{ tokens.program_code }} {{ tokens.plan_description }} - {{ tokens.intake }}",
                 ],
             },
         },
@@ -1083,8 +1085,8 @@ def test_render_pdf_uses_configured_font_roles(
                 "university_name": "UNSW Sydney",
             },
             "pdf": {
-                "header_left_lines": ["{university_name}"],
-                "header_right_lines": ["{program_name}"],
+                "header_left_lines": ["{{ tokens.university_name }}"],
+                "header_right_lines": ["{{ tokens.program_name }}"],
                 "fonts": {
                     "header": {
                         "regular": "fonts/Clancy-Regular.ttf",
@@ -1500,3 +1502,133 @@ def test_render_pdf_period_label_y_offset_moves_label_down(
     lower_label_y = next(item[1] for item in lower_fake.drawn_text if item[2] == "Term 2")
 
     assert lower_label_y < base_label_y
+
+
+def test_render_pdf_legacy_tokens_no_longer_expand(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "runtime": {"date": "2026-05-28", "year": "2026"},
+            "pdf": {
+                "footer_right": "Information correct as at {date}",
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    assert "Information correct as at {date}" in fake.drawn_strings
+    assert "Information correct as at 2026-05-28" not in fake.drawn_strings
+
+
+def test_render_pdf_second_page_renders_info_and_disclaimer_boxes(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=["Artificial Intelligence"],
+            validity_from="2026",
+            validity_to="2028",
+            program_id="3707",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "runtime": {"date": "2026-05-28", "year": "2026"},
+            "pdf": {
+                "header_left_lines": ["{{ tokens.university_name }}"],
+                "header_right_lines": ["{{ tokens.program_name }}"],
+                "second_page": {
+                    "enabled": True,
+                    "info_box_title": "Plan notes",
+                    "info_box_text": "{% if tokens.intake_period == 'T1' %}Term-1 guidance for {{ tokens.program_code }}{% endif %}",
+                    "bottom_disclaimer": "Bottom disclaimer for {{ tokens.plan_code }}",
+                },
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    assert fake.show_page_calls == 2
+    assert "Plan notes" in fake.drawn_strings
+    assert "Term-1 guidance for 3707" in fake.drawn_strings
+    assert "Bottom disclaimer for CEICAH3707" in fake.drawn_strings
+    assert fake.drawn_strings.count("UNSW Sydney") >= 2

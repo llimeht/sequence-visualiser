@@ -29,3 +29,11 @@ Accepted values:
 - RGB triplet as `[r, g, b]` where each value is either `0..255` or `0..1`
 
 Invalid values fall back to built-in defaults.
+
+## PDF text templating and second page
+
+Configured PDF text values are rendered using Jinja syntax (`{{ ... }}` and `{% ... %}`).
+
+- Use `tokens.*` values (for example `{{ tokens.date }}` or `{{ tokens.program_name }}`).
+- Enable an optional second PDF page with `pdf.second_page.enabled`.
+- `pdf.second_page.info_box_title`, `pdf.second_page.info_box_text`, and `pdf.second_page.bottom_disclaimer` control page-2 content.

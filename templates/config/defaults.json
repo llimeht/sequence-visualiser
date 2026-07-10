@@ -12,7 +12,13 @@
   "pdf": {
     "top_disclaimer": "Intended as a guide only. Courses do not need to be studied in the exact structure that they appear here. Please consult the handbook for term offerings and prerequisite information before deviating from the recommended sequence. Most courses do not run in all terms.",
     "footer_left": "Check the Handbook and Class Timetable for details.",
-    "footer_right": "Information correct as at {date}\nCopyright © {year} {university_name}",
+    "footer_right": "Information correct as at {{ tokens.date }}\nCopyright © {{ tokens.year }} {{ tokens.university_name }}",
+    "second_page": {
+      "enabled": false,
+      "info_box_title": "Important Information",
+      "info_box_text": "Add your second-page information here. You can use Jinja expressions, for example: {% if tokens.intake_period == 'T1' %}Term 1 intake{% else %}Non-Term-1 intake{% endif %}.",
+      "bottom_disclaimer": "Advisory: This sequence is indicative only. Always confirm requirements in the Handbook and timetable for {{ tokens.program_code }}."
+    },
     "colours": {
       "years": {
         "Year 1": "#fafafa",

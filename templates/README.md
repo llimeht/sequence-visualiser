@@ -73,14 +73,14 @@ Supported keys in the current implementation:
   - Optional lines for the left side of the PDF header.
   - Accepts either an array of strings or a newline-separated string.
   - Defaults to:
-    - `{university_name}`
-    - `{plan_code} - {intake}`
+    - `{{ tokens.university_name }}`
+    - `{{ tokens.plan_code }} - {{ tokens.intake }}`
 - `pdf.header_right_lines`
   - Optional lines for the right side of the PDF header.
   - Accepts either an array of strings or a newline-separated string.
   - Defaults to:
-    - `Program: {program_name}`
-    - `Majors: {majors}`
+    - `Program: {{ tokens.program_name }}`
+    - `Majors: {{ tokens.majors }}`
 - `pdf.header_right_width_mm`
   - Optional width of the right header text box in millimetres.
   - Larger values reserve more space for right-aligned header text.
@@ -104,6 +104,13 @@ Supported keys in the current implementation:
 - `pdf.period_label_y_offset_pt`
   - Optional vertical offset in points from the year heading to term/semester labels.
   - Increase this to move term/semester labels lower.
+- `pdf.second_page`
+  - Optional second-page configuration block.
+  - `enabled` controls whether a second PDF page is rendered.
+  - `info_box_title` and `info_box_text` render in a bordered info box.
+  - `bottom_disclaimer` renders in a full-width bordered box near the bottom of page 2.
+  - `footer_left` and `footer_right` optionally override page-2 footer lines.
+  - Optional sizing keys: `info_font_size_pt`, `info_line_height_pt`, `disclaimer_font_size_pt`, `disclaimer_line_height_pt`.
 - `pdf.fonts`
   - Optional role-based PDF font configuration.
   - Font file paths should be relative to `templates/assets/` or `template-overrides/assets/`, or absolute paths.
@@ -122,25 +129,39 @@ Supported keys in the current implementation:
     - `secondary_size` (additional left header lines)
     - `right_size` (right header lines)
 
-Supported header/footer tokens include:
+PDF text fields are rendered as Jinja templates. Use `{{ ... }}` and Jinja conditionals/loops.
 
-- `{date}`
-- `{year}`
-- `{university_name}`
-- `{plan_code}`
-- `{plan_description}` (short descriptor to distinguish plan variants)
-- `{plan_description_short}` (alias of `{plan_description}`)
-- `{program_code}` (canonical program identifier; sourced from `program_id` and mirrored by `{program_id}`)
-- `{program_id}` (canonical program identifier)
-- `{intake}`
-- `{intake_year}` and `{intake.year}`
-- `{intake_period}` and `{intake.period}`
-- `{program_name}`
-- `{majors}`
-- `{degree_code}` (compatibility alias of `{program_id}`)
-- `{specialisation_code}`
-- `{specialisation_codes}` (comma-separated list of specialisation codes)
-- `{rule_file}`
+Supported values under `tokens` include:
+
+- `tokens.date`
+- `tokens.year`
+- `tokens.university_name`
+- `tokens.plan_code`
+- `tokens.plan_description` (short descriptor to distinguish plan variants)
+- `tokens.plan_description_short` (alias of `tokens.plan_description`)
+- `tokens.program_code` (canonical program identifier; sourced from `program_id` and mirrored by `tokens.program_id`)
+- `tokens.program_id` (canonical program identifier)
+- `tokens.intake`
+- `tokens.intake_year`
+- `tokens.intake_period`
+- `tokens.program_name`
+- `tokens.majors`
+- `tokens.degree_code` (compatibility alias of `tokens.program_id`)
+- `tokens.specialisation_code`
+- `tokens.specialisation_codes` (comma-separated list of specialisation codes)
+- `tokens.rule_file`
+
+Additional top-level template variables are available in PDF text templates: `plan`, `rule`, `years`, `tweaks`, `plan_code`, `program_id`, `program_code`, `specialisation_code`, `specialisation_codes`, `degree_code`.
+
+Migration note:
+
+- Legacy `{token}` placeholders are no longer expanded in PDF text.
+- Use Jinja expressions instead, for example:
+  - old: `{date}`
+  - new: `{{ tokens.date }}`
+- Dotted intake aliases were removed.
+  - removed: `intake.year` and `intake.period`
+  - use: `{{ tokens.intake_year }}` and `{{ tokens.intake_period }}`
 - `html.title`
   - HTML `<title>` value.
 - `html.heading`
@@ -158,6 +179,7 @@ Example minimal config:
   "pdf": {
     "logo_height_mm": 12,
     "logo_right_spacing_mm": 8,
+    "footer_right": "Information correct as at {{ tokens.date }}\\nCopyright © {{ tokens.year }} {{ tokens.university_name }}",
     "fonts": {
       "header": {
         "regular": "fonts/Clancy-Regular.ttf",
