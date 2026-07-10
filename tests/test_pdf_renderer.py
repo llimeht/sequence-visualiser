@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import pytest
 from _pytest.monkeypatch import MonkeyPatch
 from reportlab.lib.units import mm
 from reportlab.pdfbase.ttfonts import TTFError
@@ -810,8 +809,13 @@ def test_render_pdf_logo_height_mm_scales_width_and_applies_spacing(
         degree_code="3707",
     )
 
+    def _fixed_aspect_ratio(_logo: object) -> float:
+        return 2.0
+
     monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
-    monkeypatch.setattr("sequence_visualiser.pdf_renderer._logo_aspect_ratio", lambda _logo: 2.0)
+    monkeypatch.setattr(
+        "sequence_visualiser.pdf_renderer._logo_aspect_ratio", _fixed_aspect_ratio
+    )
     render_pdf(context, tmp_path / "out.pdf", tmp_path)
 
     fake = _FakeCanvas.last
@@ -822,7 +826,7 @@ def test_render_pdf_logo_height_mm_scales_width_and_applies_spacing(
     expected_logo_width = (12 * mm) * 2.0
     expected_spacing = 9 * mm
     expected_title_x = 20 + expected_logo_width + expected_spacing
-    assert logo_call[0] == pytest.approx(expected_title_x)
+    assert abs(logo_call[0] - expected_title_x) < 1e-6
 
 
 def test_render_pdf_logo_width_mm_passed_to_pdf_logo_draw(
@@ -894,16 +898,21 @@ def test_render_pdf_logo_width_mm_passed_to_pdf_logo_draw(
         degree_code="3707",
     )
 
+    def _fixed_aspect_ratio(_logo: object) -> float:
+        return 2.0
+
     monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
     monkeypatch.setattr(
         "sequence_visualiser.pdf_renderer._draw_pdf_logo", _fake_draw_pdf_logo
     )
-    monkeypatch.setattr("sequence_visualiser.pdf_renderer._logo_aspect_ratio", lambda _logo: 2.0)
+    monkeypatch.setattr(
+        "sequence_visualiser.pdf_renderer._logo_aspect_ratio", _fixed_aspect_ratio
+    )
     render_pdf(context, tmp_path / "out.pdf", tmp_path)
 
     assert len(captured) == 1
-    assert captured[0][0] == pytest.approx(25 * mm)
-    assert captured[0][1] == pytest.approx((25 * mm) / 2.0)
+    assert abs(captured[0][0] - (25 * mm)) < 1e-6
+    assert abs(captured[0][1] - ((25 * mm) / 2.0)) < 1e-6
 
 
 def test_render_pdf_header_widths_are_configurable(
@@ -970,9 +979,9 @@ def test_render_pdf_header_widths_are_configurable(
 
     assert len(fit_widths) >= 2
     # First call: left header width uses configured minimum width.
-    assert fit_widths[0] == pytest.approx(120 * mm)
+    assert abs(fit_widths[0] - (120 * mm)) < 1e-6
     # Second call: right header width uses configured right box width minus paddings.
-    assert fit_widths[1] == pytest.approx((200 * mm) - (2 * 8))
+    assert abs(fit_widths[1] - ((200 * mm) - (2 * 8))) < 1e-6
 
 
 def test_render_pdf_header_line_gap_is_configurable(
@@ -1029,8 +1038,8 @@ def test_render_pdf_header_line_gap_is_configurable(
     r1 = next(item for item in fake.drawn_right_text if item[2] == "R1")
     r2 = next(item for item in fake.drawn_right_text if item[2] == "R2")
 
-    assert (l1[1] - l2[1]) == pytest.approx(20)
-    assert (r1[1] - r2[1]) == pytest.approx(20)
+    assert abs((l1[1] - l2[1]) - 20) < 1e-6
+    assert abs((r1[1] - r2[1]) - 20) < 1e-6
 
 
 def test_render_pdf_uses_configured_font_roles(
@@ -1061,6 +1070,17 @@ def test_render_pdf_uses_configured_font_roles(
     def _fake_register_font_file(font_path: Path, alias: str) -> str | None:
         _ = font_path
         return alias
+
+    def _fit_text_size_stub(
+        _text: str,
+        _max_width: float,
+        _font_name: str,
+        max_size: int = 8,
+    ) -> int:
+        return max_size
+
+    def _string_width_stub(text: str, _font_name: str, font_size: float) -> float:
+        return float(len(text) * font_size)
 
     context = RenderContext(
         plan=Plan(
@@ -1124,11 +1144,11 @@ def test_render_pdf_uses_configured_font_roles(
     )
     monkeypatch.setattr(
         "sequence_visualiser.pdf_renderer._fit_text_size_for_font",
-        lambda _text, _max_width, _font_name, max_size=8: max_size,
+        _fit_text_size_stub,
     )
     monkeypatch.setattr(
         "sequence_visualiser.pdf_renderer.pdfmetrics.stringWidth",
-        lambda text, _font_name, font_size: float(len(text) * font_size),
+        _string_width_stub,
     )
     render_pdf(context, tmp_path / "out.pdf", tmp_path)
 
@@ -1351,9 +1371,9 @@ def test_render_pdf_header_background_spans_page_and_disclaimer_is_below(
 
     assert any(
         rect[0] == 0
-        and rect[1] == pytest.approx(header_bottom)
-        and rect[2] == pytest.approx(page_width)
-        and rect[3] == pytest.approx(header_height)
+        and abs(rect[1] - header_bottom) < 1e-6
+        and abs(rect[2] - page_width) < 1e-6
+        and abs(rect[3] - header_height) < 1e-6
         and rect[4] == 1
         for rect in fake.rect_calls
     )
@@ -1429,7 +1449,7 @@ def test_render_pdf_header_bottom_spacing_pushes_disclaimer_down(
 
     # y = (header_bottom - spacing) - font_size
     expected_y = (header_bottom - (8 * mm)) - 8
-    assert disclaimer[1] == pytest.approx(expected_y)
+    assert abs(disclaimer[1] - expected_y) < 1e-6
 
 
 def test_render_pdf_period_label_y_offset_moves_label_down(
@@ -1703,7 +1723,7 @@ def test_render_pdf_second_page_preserves_blank_line_spacing(
 
     # Blank line should create one additional line-height gap between adjacent lines.
     y_gap = line_a[0][1] - line_b[0][1]
-    assert y_gap == pytest.approx(24)
+    assert abs(y_gap - 24) < 1e-6
 
 
 def test_render_pdf_second_page_top_disclaimer_can_be_overridden(

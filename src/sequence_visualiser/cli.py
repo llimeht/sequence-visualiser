@@ -10,9 +10,11 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import sys
+from collections.abc import Mapping
 from datetime import date
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from .config_loader import ConfigError, load_tweaks
 from .course_overrides import (
@@ -185,11 +187,14 @@ def _render_single_plan(
         "year": datestamp[:4],
     }
     existing_runtime = tweaks.get("runtime")
-    if isinstance(existing_runtime, dict):
-        merged_runtime = dict(existing_runtime)
+    if isinstance(existing_runtime, Mapping):
+        runtime_mapping = cast(Mapping[object, object], existing_runtime)
+        merged_runtime: dict[str, object] = {
+            str(key): value for key, value in runtime_mapping.items()
+        }
         merged_runtime.update(runtime_tweaks)
     else:
-        merged_runtime = runtime_tweaks
+        merged_runtime = dict[str, object](runtime_tweaks)
     tweaks = dict(tweaks)
     tweaks["runtime"] = merged_runtime
 

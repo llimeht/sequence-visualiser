@@ -21,13 +21,13 @@ The PDF renderer supports configurable background colours under `pdf.colours`:
 
 - `years`: per-year row background (`Year 1` to `Year 5`; numeric keys `1` to `5` are also accepted)
 - `models`: per-calendar-model period colours
-	- `trimesters_standard`: `Term 1`, `Term 2`, `Term 3`
-	- `trimesters_extended`: `Summer Term`, `Term 1`, `Term 2`, `Term 3`
-	- `semesters_standard`: `Semester 1`, `Semester 2`
-	- `semesters_extended`: `Summer Term`, `Semester 1`, `Winter Term`, `Semester 2`
+  - `trimesters_standard`: `Term 1`, `Term 2`, `Term 3`
+  - `trimesters_extended`: `Summer Term`, `Term 1`, `Term 2`, `Term 3`
+  - `semesters_standard`: `Semester 1`, `Semester 2`
+- `semesters_extended`: `Summer Term`, `Semester 1`, `Winter Term`, `Semester 2`
 - `families`: per-calendar-family fallback period colours
-	- `trimesters`
-	- `semesters`
+  - `trimesters`
+  - `semesters`
 - `terms`: per-term box background (`Term 1`, `Term 2`, `Term 3`)
 - `semesters`: per-semester box background (`Semester 1`, `Semester 2`)
 

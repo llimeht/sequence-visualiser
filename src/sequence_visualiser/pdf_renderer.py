@@ -9,15 +9,15 @@ from __future__ import annotations
 import logging
 import re
 from importlib import import_module
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from jinja2 import Environment
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import mm
-from reportlab.lib.utils import ImageReader, simpleSplit
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont, TTFError
 from reportlab.pdfgen import canvas
@@ -27,6 +27,17 @@ from .render_tokens import runtime_token_values
 from .timeline import CALENDAR_MODELS
 
 logger = logging.getLogger(__name__)
+
+
+class _GetFont(Protocol):
+    def __call__(self, fontName: str) -> object: ...
+
+
+class _CanvasDoForm(Protocol):
+    def __call__(self, name: object) -> None: ...
+
+
+_get_font = cast(_GetFont, pdfmetrics.getFont)
 
 CODE_FONT = "Helvetica-Bold"
 TEXT_FONT = "Helvetica"
@@ -119,14 +130,6 @@ def _display_course(course: Course) -> tuple[str, str]:
 def _course_code_field(code: str) -> str:
     """Pad the course code to a fixed width for display alignment."""
     return code.ljust(COURSE_CODE_CHARS)
-
-
-def _fit_text_size(text: str, max_width: float, max_size: int = TITLE_FONT_MAX) -> int:
-    """Find the largest font size that fits the text within max_width."""
-    for size in range(max_size, TITLE_FONT_MIN - 1, -1):
-        if pdfmetrics.stringWidth(text, TEXT_FONT, size) <= max_width:
-            return size
-    return TITLE_FONT_MIN
 
 
 def _period_slots(year: YearLayout) -> list[tuple[str, list[Course]]]:
@@ -277,25 +280,6 @@ def build_pdf_metadata(context: RenderContext, university_name: str) -> dict[str
     }
 
 
-def _text_lines(value: object) -> list[str]:
-    """Normalise config text into non-empty lines.
-
-    Supported forms:
-    - string (split by lines)
-    - list/tuple (each item converted to string)
-    """
-    if isinstance(value, str):
-        return [line.strip() for line in value.splitlines() if line.strip()]
-    if isinstance(value, (list, tuple)):
-        lines: list[str] = []
-        for item in value:
-            line = str(item).strip()
-            if line:
-                lines.append(line)
-        return lines
-    return []
-
-
 def _resolve_asset_path(asset_path: str, templates_dir: Path) -> Path | None:
     """Resolve an asset path against templates assets and local override assets."""
     candidate = Path(asset_path)
@@ -332,13 +316,14 @@ def _resolve_logo_path(branding: dict[str, Any], templates_dir: Path) -> Path | 
 def _register_font_file(font_path: Path, alias: str) -> str | None:
     """Register a font file under an alias, returning alias on success."""
     try:
-        pdfmetrics.getFont(alias)
+        _get_font(alias)
         return alias
     except KeyError:
         pass
 
     try:
-        pdfmetrics.registerFont(TTFont(alias, str(font_path)))
+        register_font = cast(Callable[[object], None], cast(Any, pdfmetrics).registerFont)
+        register_font(TTFont(alias, str(font_path)))
         return alias
     except (TTFError, ValueError, OSError, TypeError):
         return None
@@ -606,7 +591,8 @@ def _render_pdf_template_text(
 ) -> str:
     """Render a config value using Jinja and return stripped text."""
     if isinstance(value, (list, tuple)):
-        template_text = "\n".join(str(item) for item in value)
+        items = cast(Iterable[object], value)
+        template_text = "\n".join(str(item) for item in items)
     else:
         template_text = str(value)
     if not template_text.strip():
@@ -805,7 +791,8 @@ def _draw_pdf_logo(
     c.translate(draw_x, draw_y)
     c.scale(scale, scale)
     c.translate(-src_x0, -src_y0)
-    c.doForm(toreportlab.makerl(c, page_xobj))
+    do_form = cast(_CanvasDoForm, cast(Any, c).doForm)
+    do_form(toreportlab.makerl(c, page_xobj))
     c.restoreState()
 
 
@@ -936,19 +923,17 @@ def _wrapped_lines_preserving_blank_lines(
     if not text:
         return []
 
+    simple_split = cast(
+        Callable[[str | bytes, str | None, float, float | None], list[str]],
+        getattr(import_module("reportlab.lib.utils"), "simpleSplit"),
+    )
+
     wrapped: list[str] = []
     for raw_line in text.splitlines():
         if not raw_line.strip():
             wrapped.append("")
             continue
-        wrapped.extend(
-            simpleSplit(  # type: ignore[no-untyped-call]
-                raw_line,
-                font_name,
-                font_size,
-                max_width,
-            )
-        )
+        wrapped.extend(simple_split(raw_line, font_name, font_size, max_width))
     return wrapped
 
 
@@ -1159,15 +1144,11 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
     top_disclaimer = _render_pdf_template_text(
         pdf_tweaks.get("top_disclaimer", ""), template_env, template_context
     )
-    top_disclaimer_lines = (
-        simpleSplit(  # type: ignore[no-untyped-call]
-            top_disclaimer,
-            cast(str, fonts["body_regular"]),
-            TOP_DISCLAIMER_FONT_SIZE,
-            content_width,
-        )
-        if top_disclaimer
-        else []
+    top_disclaimer_lines = _wrapped_lines_preserving_blank_lines(
+        top_disclaimer,
+        font_name=cast(str, fonts["body_regular"]),
+        font_size=TOP_DISCLAIMER_FONT_SIZE,
+        max_width=content_width,
     )
 
     footer_left_lines = _render_pdf_template_lines(
@@ -1320,15 +1301,11 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
             template_env,
             template_context,
         )
-        second_page_top_disclaimer_lines = (
-            simpleSplit(  # type: ignore[no-untyped-call]
-                second_page_top_disclaimer,
-                cast(str, fonts["body_regular"]),
-                TOP_DISCLAIMER_FONT_SIZE,
-                content_width,
-            )
-            if second_page_top_disclaimer
-            else []
+        second_page_top_disclaimer_lines = _wrapped_lines_preserving_blank_lines(
+            second_page_top_disclaimer,
+            font_name=cast(str, fonts["body_regular"]),
+            font_size=TOP_DISCLAIMER_FONT_SIZE,
+            max_width=content_width,
         )
 
         second_available_top = max(margin, header_bottom - header_bottom_spacing)

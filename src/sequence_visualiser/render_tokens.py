@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date
-from typing import Any, cast
+from typing import cast
 
 from .models import RenderContext
 
@@ -18,7 +18,7 @@ def _notes_token_values(context: RenderContext) -> dict[str, str]:
         value = notes.get(field_name)
         if not isinstance(value, list):
             return ""
-        items = cast(list[Any], value)
+        items = cast(list[object], value)
         return "\n".join(str(item).strip() for item in items if str(item).strip())
 
     return {
@@ -34,7 +34,11 @@ def runtime_token_values(
 ) -> dict[str, str]:
     """Return shared token values used by renderers and templates."""
     runtime = context.tweaks.get("runtime", {})
-    runtime_mapping = cast(dict[str, object], runtime) if isinstance(runtime, dict) else {}
+    runtime_mapping: dict[str, object] = (
+        {str(key): value for key, value in cast(dict[object, object], runtime).items()}
+        if isinstance(runtime, dict)
+        else {}
+    )
     date_value = str(runtime_mapping.get("date", "")).strip() or date.today().isoformat()
     year_value = str(runtime_mapping.get("year", "")).strip() or date_value[:4]
     intake_value = context.plan.intake.strip()

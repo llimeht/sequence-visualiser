@@ -56,7 +56,9 @@ CALENDAR_MODELS: dict[str, CalendarModel] = {
 TERM_LABELS = {"Term 1", "Term 2", "Term 3"}
 SEMESTER_LABELS = {"Semester 1", "Semester 2"}
 WINTER_LABELS = {"Winter Term"}
-KNOWN_PERIOD_LABELS = set().union(*(model.periods for model in CALENDAR_MODELS.values()))
+KNOWN_PERIOD_LABELS: set[str] = {
+    period for model in CALENDAR_MODELS.values() for period in model.periods
+}
 
 
 class TimelineError(ValueError):

@@ -12,7 +12,6 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from dataclasses import field
 from enum import Enum
 from pathlib import Path
 from typing import Any, cast
@@ -39,7 +38,7 @@ class ProgramIdentity:
     plan_code: str
     specialisation_code: str
     degree_code: str
-    specialisation_codes: list[str] = field(default_factory=list)
+    specialisation_codes: list[str]
 
 
 def _identity_from_plan_code(candidate: str) -> ProgramIdentity | None:
@@ -161,7 +160,8 @@ class MetadataSource(str, Enum):
 def _parse_listish(value: object, field_name: str) -> list[str]:
     """Parse a list-like metadata field from JSON array or semicolon-delimited text."""
     if isinstance(value, list):
-        parsed = [str(item).strip() for item in value if str(item).strip()]
+        items = cast(list[object], value)
+        parsed = [text for item in items if (text := str(item).strip())]
         if parsed:
             return parsed
     if isinstance(value, str):
@@ -176,7 +176,8 @@ def _parse_listish(value: object, field_name: str) -> list[str]:
                     f"Invalid {field_name}: expected JSON array or ';'-delimited text"
                 ) from exc
             if isinstance(payload, list):
-                parsed = [str(item).strip() for item in payload if str(item).strip()]
+                items = cast(list[object], payload)
+                parsed = [text for item in items if (text := str(item).strip())]
                 if parsed:
                     return parsed
         parsed = [item.strip() for item in text.split(";") if item.strip()]
