@@ -428,6 +428,69 @@ def test_render_pdf_renders_disclaimer_and_footers(
     assert fake.creator.startswith("Copyright © 2026 UNSW Sydney / sequence-visualiser")
 
 
+def test_render_pdf_footer_page_tokens_are_expanded(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "footer_left": "Page {{ tokens.page_number }} of {{ tokens.total_pages }}.",
+                "second_page": {
+                    "enabled": True,
+                    "footer_left": "Page {{ tokens.page_number }} of {{ tokens.total_pages }}.",
+                },
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    assert "Page 1 of 2." in fake.drawn_strings
+    assert "Page 2 of 2." in fake.drawn_strings
+
+
 def test_render_pdf_header_includes_program_and_majors(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:

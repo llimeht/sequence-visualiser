@@ -614,6 +614,22 @@ def _render_pdf_template_lines(
     return [line.strip() for line in rendered.splitlines() if line.strip()]
 
 
+def _page_template_context(
+    context: RenderContext,
+    university_name: str,
+    *,
+    page_number: int,
+    total_pages: int,
+) -> dict[str, Any]:
+    """Build the PDF template context for a specific page."""
+    tokens = {
+        **runtime_token_values(context, university_name),
+        "page_number": str(page_number),
+        "total_pages": str(total_pages),
+    }
+    return _pdf_template_context(context, university_name, tokens)
+
+
 def _pdf_logo_aspect_ratio(logo: Path) -> float:
     """Return width/height ratio of the first page of a PDF logo."""
     pdfrw = import_module("pdfrw")
@@ -1151,21 +1167,31 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
         max_width=content_width,
     )
 
+    footer_left_template = pdf_tweaks.get(
+        "footer_left",
+        "Check the Handbook and Class Timetable for details.",
+    )
+    footer_right_template = pdf_tweaks.get(
+        "footer_right",
+        "Information correct as at {{ tokens.date }}\nCopyright © {{ tokens.year }} {{ tokens.university_name }}",
+    )
+    second_page = _colour_mapping(pdf_tweaks, "second_page")
+    total_pages = 2 if _bool_config(second_page.get("enabled", False)) else 1
+    first_page_template_context = _page_template_context(
+        context,
+        university_name,
+        page_number=1,
+        total_pages=total_pages,
+    )
     footer_left_lines = _render_pdf_template_lines(
-        pdf_tweaks.get(
-            "footer_left",
-            "Check the Handbook and Class Timetable for details.",
-        ),
+        footer_left_template,
         template_env,
-        template_context,
+        first_page_template_context,
     )
     footer_right_lines = _render_pdf_template_lines(
-        pdf_tweaks.get(
-            "footer_right",
-            "Information correct as at {{ tokens.date }}\\nCopyright © {{ tokens.year }} {{ tokens.university_name }}",
-        ),
+        footer_right_template,
         template_env,
-        template_context,
+        first_page_template_context,
     )
 
     footer_block_height = _footer_block_height(footer_left_lines, footer_right_lines)
@@ -1272,7 +1298,6 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
         fonts=fonts,
     )
 
-    second_page = _colour_mapping(pdf_tweaks, "second_page")
     if _bool_config(second_page.get("enabled", False)):
         c.showPage()
 
@@ -1320,15 +1345,21 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
                 + TOP_DISCLAIMER_BOTTOM_GAP
             )
 
+        second_page_template_context = _page_template_context(
+            context,
+            university_name,
+            page_number=2,
+            total_pages=total_pages,
+        )
         second_footer_left_lines = _render_pdf_template_lines(
-            second_page.get("footer_left", "\n".join(footer_left_lines)),
+            second_page.get("footer_left", footer_left_template),
             template_env,
-            template_context,
+            second_page_template_context,
         )
         second_footer_right_lines = _render_pdf_template_lines(
-            second_page.get("footer_right", "\n".join(footer_right_lines)),
+            second_page.get("footer_right", footer_right_template),
             template_env,
-            template_context,
+            second_page_template_context,
         )
         second_available_bottom = margin + _footer_block_height(
             second_footer_left_lines, second_footer_right_lines
