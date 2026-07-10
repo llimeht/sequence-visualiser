@@ -7,6 +7,7 @@ Loads and validates plan JSON files, converting them to Plan objects.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from .models import Course, Plan
@@ -44,20 +45,31 @@ def load_plan(plan_path: Path) -> Plan:
     for index, raw in enumerate(payload["courses"], start=1):
         try:
             course = Course(
-                enrol_year=str(raw["enrol_year"]),
+                enrol_year=str(raw["enrol_year"]).strip(),
                 year=int(raw["year"]),
-                period=str(raw["period"]),
-                course_n=str(raw["course_n"]),
-                code=str(raw["code"]),
-                title=str(raw["title"]),
+                period=str(raw["period"]).strip(),
+                course_n=str(raw["course_n"]).strip(),
+                code=str(raw["code"]).strip(),
+                title=str(raw["title"]).strip(),
                 uoc=int(raw["uoc"]),
-                prerequisites=str(raw.get("prerequisites", "")),
+                prerequisites=str(raw.get("prerequisites", "")).strip(),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise PlanParseError(
                 f"Invalid course entry at index {index} in {plan_path}: {exc}"
             ) from exc
         courses.append(course)
+
+    program_metadata: dict[str, object] | None = None
+    raw_program_metadata = payload.get("program_metadata")
+    if raw_program_metadata is not None:
+        if not isinstance(raw_program_metadata, Mapping):
+            raise PlanParseError(
+                f"Invalid program_metadata in plan file {plan_path}: must be an object"
+            )
+        program_metadata = {
+            str(key): value for key, value in raw_program_metadata.items()
+        }
 
     return Plan(
         sheet=str(payload["sheet"]),
@@ -67,4 +79,5 @@ def load_plan(plan_path: Path) -> Plan:
         intake=str(payload["intake"]),
         courses=courses,
         source_path=plan_path,
+        program_metadata=program_metadata,
     )

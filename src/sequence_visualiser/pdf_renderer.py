@@ -241,6 +241,12 @@ def _token_values(context: RenderContext, university_name: str) -> dict[str, str
     runtime = _colour_mapping(context.tweaks, "runtime")
     date_value = str(runtime.get("date", "")).strip() or date.today().isoformat()
     year_value = str(runtime.get("year", "")).strip() or date_value[:4]
+    program_id_value = context.rule_metadata.program_id or context.degree_code
+    specialisation_codes_text = (
+        ", ".join(context.specialisation_codes)
+        if context.specialisation_codes
+        else context.specialisation_code
+    )
     majors_text = (
         ", ".join(context.rule_metadata.specialisation_names)
         if context.rule_metadata.specialisation_names
@@ -251,12 +257,14 @@ def _token_values(context: RenderContext, university_name: str) -> dict[str, str
         "year": year_value,
         "university_name": university_name,
         "plan_code": context.plan_code,
-        "program_code": context.rule_metadata.program_id or context.plan_code,
+        "program_code": program_id_value,
+        "program_id": program_id_value,
         "intake": context.plan.intake,
         "program_name": context.rule_metadata.program_name,
         "majors": majors_text,
-        "degree_code": context.degree_code,
+        "degree_code": program_id_value,
         "specialisation_code": context.specialisation_code,
+        "specialisation_codes": specialisation_codes_text,
         "rule_file": context.rule_metadata.rule_file.name,
     }
 

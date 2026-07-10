@@ -292,3 +292,46 @@ def test_default_overrides_remain_cwd_relative(
     assert rc == 0
     html = (output_dir / "CEICAH3707_2026_T1.html").read_text(encoding="utf-8")
     assert "CWD Override Uni" in html
+
+
+def test_cli_uses_spreadsheet_metadata_source(tmp_path: Path) -> None:
+    templates_dir = tmp_path / "templates"
+    (templates_dir / "config").mkdir(parents=True)
+    (templates_dir / "config" / "defaults.json").write_text("{}", encoding="utf-8")
+    (templates_dir / "sequence.html.j2").write_text(HTML_TEMPLATE, encoding="utf-8")
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan(plan, "Term 1")
+
+    mapping = tmp_path / "mapping.csv"
+    mapping.write_text(
+        "\n".join(
+            [
+                "plan_filename,plan_code,program_id,program_name,specialisation_codes,specialisation_names",
+                "CEICAH3707_2026_T1,CEICAH3707,3707,Bachelor of Engineering (Honours),CEICAH,Chemical Engineering",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "out"
+    rc = main(
+        [
+            str(plan),
+            "--output-dir",
+            str(output_dir),
+            "--templates-dir",
+            str(templates_dir),
+            "--config-dir",
+            str(templates_dir / "config"),
+            "--formats",
+            "html",
+            "--metadata-source",
+            "spreadsheet",
+            "--metadata-map",
+            str(mapping),
+        ]
+    )
+
+    assert rc == 0
+    assert (output_dir / "CEICAH3707_2026_T1.html").exists()

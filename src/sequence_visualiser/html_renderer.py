@@ -70,7 +70,10 @@ def render_html(context: RenderContext, templates_dir: Path, output_path: Path) 
         tweaks=context.tweaks,
         years=context.years,
         plan_code=context.plan_code,
+        program_id=context.rule_metadata.program_id or context.degree_code,
+        program_code=context.rule_metadata.program_id or context.degree_code,
         specialisation_code=context.specialisation_code,
+        specialisation_codes=context.specialisation_codes,
         degree_code=context.degree_code,
         html_metadata=html_metadata,
     )

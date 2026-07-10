@@ -128,12 +128,14 @@ Supported header/footer tokens include:
 - `{year}`
 - `{university_name}`
 - `{plan_code}`
-- `{program_code}` (from rules `program.id`; falls back to `{plan_code}` if missing)
+- `{program_code}` (canonical program identifier; sourced from `program_id` and mirrored by `{program_id}`)
+- `{program_id}` (canonical program identifier)
 - `{intake}`
 - `{program_name}`
 - `{majors}`
-- `{degree_code}`
+- `{degree_code}` (compatibility alias of `{program_id}`)
 - `{specialisation_code}`
+- `{specialisation_codes}` (comma-separated list of specialisation codes)
 - `{rule_file}`
 - `html.title`
   - HTML `<title>` value.

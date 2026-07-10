@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from sequence_visualiser.plan_loader import load_plan
-from sequence_visualiser.rules_resolver import resolve_rule_metadata
+from sequence_visualiser.metadata_resolver import MetadataSource, resolve_metadata, resolve_rule_metadata
 
 
 def test_resolve_rule_prefers_matching_year_range(tmp_path: Path) -> None:
@@ -147,3 +147,122 @@ def test_resolve_rule_extracts_program_id_when_present(tmp_path: Path) -> None:
     _, metadata = resolve_rule_metadata(plan, rules_dir)
 
     assert metadata.program_id == "3707"
+
+
+def test_resolve_metadata_from_plan_embedded_block(tmp_path: Path) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    plan_path.write_text(
+        """
+        {
+          "sheet": "CEICAH3707",
+          "program": "CEICAH3707",
+          "career": "Undergraduate",
+          "uoc": 192,
+          "intake": "2026 T1",
+          "program_metadata": {
+            "plan_code": "CEICAH3707",
+            "program_id": "3707",
+            "program_name": "Bachelor of Engineering (Honours)",
+            "specialisation_codes": ["CEICAH"],
+            "specialisation_names": ["Chemical Engineering"]
+          },
+          "courses": []
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    plan = load_plan(plan_path)
+    identity, metadata = resolve_metadata(
+        plan=plan,
+        source=MetadataSource.PLAN,
+        rules_dir=tmp_path / "rules",
+    )
+
+    assert identity.plan_code == "CEICAH3707"
+    assert identity.specialisation_codes == ["CEICAH"]
+    assert identity.degree_code == "3707"
+    assert metadata.program_id == "3707"
+    assert metadata.program_name == "Bachelor of Engineering (Honours)"
+    assert metadata.rule_file == plan_path
+
+
+def test_resolve_metadata_from_spreadsheet_row(tmp_path: Path) -> None:
+    mapping = tmp_path / "mapping.csv"
+    mapping.write_text(
+        "\n".join(
+            [
+                "plan_filename,plan_code,program_id,program_name,specialisation_codes,specialisation_names",
+                "CEICAH3707_2026_T1,CEICAH3707,3707,Bachelor of Engineering (Honours),CEICAH,Chemical Engineering",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    plan_path.write_text(
+        """
+        {
+          "sheet": "CEICAH3707",
+          "program": "CEICAH3707",
+          "career": "Undergraduate",
+          "uoc": 192,
+          "intake": "2026 T1",
+          "courses": []
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    plan = load_plan(plan_path)
+    identity, metadata = resolve_metadata(
+        plan=plan,
+        source=MetadataSource.SPREADSHEET,
+        rules_dir=tmp_path / "rules",
+        spreadsheet_path=mapping,
+    )
+
+    assert identity.plan_code == "CEICAH3707"
+    assert identity.specialisation_codes == ["CEICAH"]
+    assert identity.degree_code == "3707"
+    assert metadata.program_id == "3707"
+    assert metadata.program_name == "Bachelor of Engineering (Honours)"
+    assert metadata.rule_file == mapping
+
+
+def test_spreadsheet_requires_required_columns(tmp_path: Path) -> None:
+    mapping = tmp_path / "mapping.csv"
+    mapping.write_text(
+        "plan_filename,plan_code,program_id,program_name,specialisation_codes\n"
+        "CEICAH3707_2026_T1,CEICAH3707,3707,Bachelor of Engineering (Honours),CEICAH\n",
+        encoding="utf-8",
+    )
+
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    plan_path.write_text(
+        """
+        {
+          "sheet": "CEICAH3707",
+          "program": "CEICAH3707",
+          "career": "Undergraduate",
+          "uoc": 192,
+          "intake": "2026 T1",
+          "courses": []
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    plan = load_plan(plan_path)
+
+    try:
+        resolve_metadata(
+            plan=plan,
+            source=MetadataSource.SPREADSHEET,
+            rules_dir=tmp_path / "rules",
+            spreadsheet_path=mapping,
+        )
+    except ValueError as exc:
+        assert "specialisation_names" in str(exc)
+    else:
+        assert False, "Expected missing-column error"

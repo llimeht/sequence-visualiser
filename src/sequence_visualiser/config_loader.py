@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from .models import Plan
-from .rules_resolver import ProgramIdentity
+from .metadata_resolver import ProgramIdentity
 
 
 class ConfigError(ValueError):
@@ -58,10 +58,19 @@ def _layer_paths(
     config_root: Path, identity: ProgramIdentity, plan: Plan
 ) -> list[Path]:
     """Return the list of config file paths to layer for a given plan and identity."""
+    specialisation_layers = [
+        config_root / "specialisation" / f"{code}.json"
+        for code in identity.specialisation_codes
+    ]
+    if not specialisation_layers:
+        specialisation_layers = [
+            config_root / "specialisation" / f"{identity.specialisation_code}.json"
+        ]
+
     return [
         config_root / "defaults.json",
         config_root / "degree" / f"{identity.degree_code}.json",
-        config_root / "specialisation" / f"{identity.specialisation_code}.json",
+        *specialisation_layers,
         config_root / "plan" / f"{identity.plan_code}.json",
         config_root / "intake" / f"{plan.source_path.stem}.json",
     ]
@@ -79,10 +88,19 @@ def load_tweaks(
         merged = _deep_merge(merged, _read_json_if_exists(path))
 
     if local_overrides_root.exists():
+        local_specialisation_layers = [
+            Path("specialisation") / f"{code}.json"
+            for code in identity.specialisation_codes
+        ]
+        if not local_specialisation_layers:
+            local_specialisation_layers = [
+                Path("specialisation") / f"{identity.specialisation_code}.json"
+            ]
+
         for relative in (
             Path("defaults.json"),
             Path("degree") / f"{identity.degree_code}.json",
-            Path("specialisation") / f"{identity.specialisation_code}.json",
+            *local_specialisation_layers,
             Path("plan") / f"{identity.plan_code}.json",
             Path("intake") / f"{plan.source_path.stem}.json",
         ):

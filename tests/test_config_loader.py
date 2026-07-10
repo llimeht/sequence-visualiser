@@ -2,7 +2,7 @@ from pathlib import Path
 
 from sequence_visualiser.config_loader import load_tweaks
 from sequence_visualiser.plan_loader import load_plan
-from sequence_visualiser.rules_resolver import extract_program_identity
+from sequence_visualiser.metadata_resolver import extract_program_identity
 
 
 def test_local_overrides_supersede_committed_layers(tmp_path: Path) -> None:

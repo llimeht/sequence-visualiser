@@ -7,6 +7,7 @@ Data models for plans, courses, rules, layouts, and rendering context.
 Defines the core dataclasses used throughout the sequence visualiser.
 """
 from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,7 @@ class Plan:
     intake: str
     courses: list[Course]
     source_path: Path
+    program_metadata: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -79,3 +81,4 @@ class RenderContext:
     plan_code: str
     specialisation_code: str
     degree_code: str
+    specialisation_codes: list[str] = field(default_factory=list)

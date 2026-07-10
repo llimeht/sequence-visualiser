@@ -24,7 +24,7 @@ from .html_renderer import render_html
 from .models import RenderContext
 from .pdf_renderer import PdfRenderError, render_pdf
 from .plan_loader import PlanParseError, load_plan
-from .rules_resolver import RuleResolutionError, resolve_rule_metadata
+from .metadata_resolver import MetadataSource, RuleResolutionError, resolve_metadata
 from .timeline import TimelineError, build_year_layouts
 
 
@@ -68,6 +68,19 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("plan_files", nargs="+", type=Path, help="Plan JSON file(s)")
     parser.add_argument("--output-dir", type=Path, default=Path("output"))
     parser.add_argument("--rules-dir", type=Path)
+    parser.add_argument(
+        "--metadata-source",
+        type=str,
+        default=MetadataSource.RULES.value,
+        choices=[source.value for source in MetadataSource],
+        help="Metadata source mode",
+    )
+    parser.add_argument(
+        "--metadata-map",
+        type=Path,
+        default=None,
+        help="CSV/TSV mapping file used when metadata source is spreadsheet",
+    )
     parser.add_argument("--templates-dir", type=Path)
     parser.add_argument("--config-dir", type=Path)
     parser.add_argument(
@@ -138,6 +151,8 @@ def _render_single_plan(
     template_overrides_dir: Path,
     formats: set[str],
     datestamp: str,
+    metadata_source: MetadataSource,
+    metadata_map: Path | None,
 ) -> None:
     """Render a single plan file to the specified formats (HTML/PDF).
 
@@ -151,7 +166,12 @@ def _render_single_plan(
         formats: Set of formats to render (html, pdf).
     """
     plan = load_plan(plan_file)
-    identity, rule_metadata = resolve_rule_metadata(plan, rules_dir)
+    identity, rule_metadata = resolve_metadata(
+        plan=plan,
+        source=metadata_source,
+        rules_dir=rules_dir,
+        spreadsheet_path=metadata_map,
+    )
 
     course_overrides = load_course_overrides(config_dir, template_overrides_dir)
     patched_courses = apply_course_overrides(plan.courses, course_overrides)
@@ -181,6 +201,7 @@ def _render_single_plan(
         plan_code=identity.plan_code,
         specialisation_code=identity.specialisation_code,
         degree_code=identity.degree_code,
+        specialisation_codes=identity.specialisation_codes,
     )
 
     if "html" in formats:
@@ -206,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         Exit code (0 for success, 1 for any failures).
     """
     args = _build_parser().parse_args(argv)
+    metadata_source = MetadataSource(args.metadata_source)
     datestamp = _resolve_datestamp(args.datestamp)
     rules_dir, templates_dir, config_dir, template_overrides_dir = _resolve_resource_dirs(
         args
@@ -227,6 +249,8 @@ def main(argv: list[str] | None = None) -> int:
                 template_overrides_dir=template_overrides_dir,
                 formats=args.formats,
                 datestamp=datestamp,
+                metadata_source=metadata_source,
+                metadata_map=args.metadata_map,
             )
             successes += 1
             print(f"OK: {plan_file}")
