@@ -8,11 +8,55 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 
 from .models import Course, PeriodLayout, Plan, YearLayout
 
-TERM_ORDER = {"Term 1": 1, "Term 2": 2, "Term 3": 3}
-SEMESTER_ORDER = {"Semester 1": 1, "Semester 2": 2}
+
+@dataclass(frozen=True)
+class CalendarModel:
+    key: str
+    family: str
+    calendar_type: str
+    periods: tuple[str, ...]
+    extended: bool
+
+
+CALENDAR_MODELS: dict[str, CalendarModel] = {
+    "trimesters_standard": CalendarModel(
+        key="trimesters_standard",
+        family="trimesters",
+        calendar_type="term",
+        periods=("Term 1", "Term 2", "Term 3"),
+        extended=False,
+    ),
+    "trimesters_extended": CalendarModel(
+        key="trimesters_extended",
+        family="trimesters",
+        calendar_type="term",
+        periods=("Summer Term", "Term 1", "Term 2", "Term 3"),
+        extended=True,
+    ),
+    "semesters_standard": CalendarModel(
+        key="semesters_standard",
+        family="semesters",
+        calendar_type="semester",
+        periods=("Semester 1", "Semester 2"),
+        extended=False,
+    ),
+    "semesters_extended": CalendarModel(
+        key="semesters_extended",
+        family="semesters",
+        calendar_type="semester",
+        periods=("Summer Term", "Semester 1", "Winter Term", "Semester 2"),
+        extended=True,
+    ),
+}
+
+TERM_LABELS = {"Term 1", "Term 2", "Term 3"}
+SEMESTER_LABELS = {"Semester 1", "Semester 2"}
+WINTER_LABELS = {"Winter Term"}
+KNOWN_PERIOD_LABELS = set().union(*(model.periods for model in CALENDAR_MODELS.values()))
 
 
 class TimelineError(ValueError):
@@ -25,21 +69,36 @@ def _course_slot_number(course_n: str) -> int:
     return int(match.group(1)) if match else 999
 
 
-def _classify_period(period: str) -> str:
-    """Classify a period label as 'term' or 'semester'.
+def _calendar_family_from_periods(periods: set[str], *, strict: bool = True) -> str | None:
+    """Infer the calendar family from a set of period labels.
 
-    Args:
-        period: The period label (e.g., 'Term 1', 'Semester 1').
     Returns:
-        'term' or 'semester'.
-    Raises:
-        TimelineError: If the period label is not recognised.
+        "trimesters", "semesters", or None if only ambiguous labels are present.
     """
-    if period in TERM_ORDER:
-        return "term"
-    if period in SEMESTER_ORDER:
-        return "semester"
-    raise TimelineError(f"Unexpected period label: {period}")
+    has_term = bool(periods.intersection(TERM_LABELS))
+    has_semester = bool(periods.intersection(SEMESTER_LABELS.union(WINTER_LABELS)))
+
+    if has_term and has_semester:
+        if not strict:
+            return None
+        raise TimelineError(f"Mixed period families: {sorted(periods)}")
+    if has_term:
+        return "trimesters"
+    if has_semester:
+        return "semesters"
+    return None
+
+
+def _target_model_key_for_family(family: str, use_extended: bool) -> str:
+    if family == "trimesters":
+        return "trimesters_extended" if use_extended else "trimesters_standard"
+    return "semesters_extended" if use_extended else "semesters_standard"
+
+
+def _is_extended_period_for_family(period: str, family: str) -> bool:
+    if family == "trimesters":
+        return period == "Summer Term"
+    return period in {"Summer Term", "Winter Term"}
 
 
 def build_year_layouts(plan: Plan) -> list[YearLayout]:
@@ -63,7 +122,14 @@ def build_year_layouts(plan: Plan) -> list[YearLayout]:
         ),
     )
 
-    layouts: list[YearLayout] = []
+    plan_labels = {course.period for course in plan.courses}
+    unexpected_labels = sorted(plan_labels.difference(KNOWN_PERIOD_LABELS))
+    if unexpected_labels:
+        raise TimelineError(f"Unexpected period label: {', '.join(unexpected_labels)}")
+
+    plan_family_hint = _calendar_family_from_periods(plan_labels, strict=False)
+
+    layout_parts: list[tuple[str, int, str, str, dict[str, list[Course]]]] = []
     for year_label in ordered_years:
         courses = year_to_courses[year_label]
         year_counts = Counter(course.year for course in courses)
@@ -79,37 +145,60 @@ def build_year_layouts(plan: Plan) -> list[YearLayout]:
                 )
             calendar_year = most_common[0][0]
 
-        period_type_set = {_classify_period(course.period) for course in courses}
-        if len(period_type_set) != 1:
+        year_period_labels = {course.period for course in courses}
+        year_family = _calendar_family_from_periods(year_period_labels)
+        if year_family is None:
+            year_family = plan_family_hint
+        if year_family is None:
             raise TimelineError(
-                f"Mixed period types in {plan.source_path.name} for {year_label}: "
-                f"{sorted(period_type_set)}"
+                f"Ambiguous period family in {plan.source_path.name} for {year_label}: "
+                f"{sorted(year_period_labels)}"
             )
-
-        calendar_type = period_type_set.pop()
-        order_map = TERM_ORDER if calendar_type == "term" else SEMESTER_ORDER
 
         period_to_courses: dict[str, list[Course]] = defaultdict(list)
         for course in courses:
             period_to_courses[course.period].append(course)
 
-        unexpected_periods = sorted(set(period_to_courses).difference(order_map))
+        family_allowed = set(CALENDAR_MODELS[_target_model_key_for_family(year_family, True)].periods)
+        unexpected_periods = sorted(set(period_to_courses).difference(family_allowed))
         if unexpected_periods:
             raise TimelineError(
                 f"Unexpected periods in {plan.source_path.name} for {year_label}: "
                 f"{', '.join(unexpected_periods)}"
             )
 
-        periods = sorted(period_to_courses, key=lambda period: order_map[period])
+        year_uses_extended = any(
+            _is_extended_period_for_family(period, year_family)
+            for period in period_to_courses
+        )
+        initial_model = _target_model_key_for_family(year_family, year_uses_extended)
+        calendar_type = CALENDAR_MODELS[initial_model].calendar_type
+        layout_parts.append(
+            (year_label, calendar_year, year_family, calendar_type, period_to_courses)
+        )
+
+    family_requires_extended: dict[str, bool] = {}
+    for _, _, family, _, period_to_courses in layout_parts:
+        family_requires_extended[family] = family_requires_extended.get(family, False) or any(
+            _is_extended_period_for_family(period, family)
+            for period in period_to_courses
+        )
+
+    layouts: list[YearLayout] = []
+    for year_label, calendar_year, family, calendar_type, period_to_courses in layout_parts:
+        model_key = _target_model_key_for_family(
+            family, family_requires_extended.get(family, False)
+        )
+        model = CALENDAR_MODELS[model_key]
         period_layouts = [
             PeriodLayout(
                 period=period,
                 courses=sorted(
-                    period_to_courses[period],
+                    period_to_courses.get(period, []),
                     key=lambda c: (_course_slot_number(c.course_n), c.code),
                 ),
             )
-            for period in periods
+            for period in model.periods
         ]
 
         layouts.append(
@@ -117,6 +206,8 @@ def build_year_layouts(plan: Plan) -> list[YearLayout]:
                 enrol_year=year_label,
                 year=calendar_year,
                 calendar_type=calendar_type,
+                calendar_family=family,
+                calendar_model=model_key,
                 periods=period_layouts,
             )
         )

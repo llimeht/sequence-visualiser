@@ -24,6 +24,7 @@ from reportlab.pdfgen import canvas
 
 from .models import Course, RenderContext, YearLayout
 from .render_tokens import runtime_token_values
+from .timeline import CALENDAR_MODELS
 
 logger = logging.getLogger(__name__)
 
@@ -85,12 +86,15 @@ SECOND_PAGE_BOX_GAP = 10
 SECOND_PAGE_DISCLAIMER_GAP = 8
 DEFAULT_YEAR_FILL = colors.white
 DEFAULT_TERM_FILLS: dict[str, colors.Color] = {
+    "Summer Term": colors.HexColor("#fff5d6"),
     "Term 1": colors.HexColor("#f2f2f2"),
     "Term 2": colors.HexColor("#e8e8e8"),
     "Term 3": colors.HexColor("#dedede"),
 }
 DEFAULT_SEMESTER_FILLS: dict[str, colors.Color] = {
+    "Summer Term": colors.HexColor("#fff5d6"),
     "Semester 1": colors.HexColor("#ededed"),
+    "Winter Term": colors.HexColor("#dff1ff"),
     "Semester 2": colors.HexColor("#e2e2e2"),
 }
 DEFAULT_YEAR_FILLS: dict[str, colors.Color] = {
@@ -127,7 +131,10 @@ def _fit_text_size(text: str, max_width: float, max_size: int = TITLE_FONT_MAX) 
 
 def _period_slots(year: YearLayout) -> list[tuple[str, list[Course]]]:
     """Return a list of (period label, courses) for the given year layout."""
-    labels = TERM_PERIODS if year.calendar_type == "term" else SEMESTER_PERIODS
+    if year.calendar_model in CALENDAR_MODELS:
+        labels = CALENDAR_MODELS[year.calendar_model].periods
+    else:
+        labels = TERM_PERIODS if year.calendar_type == "term" else SEMESTER_PERIODS
     period_lookup = {period.period: period.courses for period in year.periods}
     return [(label, period_lookup.get(label, [])) for label in labels]
 
@@ -194,9 +201,33 @@ def _year_fill_color(colours_config: dict[str, Any], year_label: str) -> colors.
 
 
 def _period_fill_color(
-    colours_config: dict[str, Any], calendar_type: str, period_label: str
+    colours_config: dict[str, Any],
+    calendar_type: str,
+    period_label: str,
+    calendar_family: str = "",
+    calendar_model: str = "",
 ) -> colors.Color:
     """Get the fill color for a period label from config, or use fallback."""
+    models_overrides = _colour_mapping(_colour_mapping(colours_config, "models"), calendar_model)
+    model_period_overrides = _colour_mapping(models_overrides, "periods")
+    if period_label in model_period_overrides:
+        fallback = (
+            DEFAULT_TERM_FILLS.get(period_label, colors.white)
+            if calendar_type == "term"
+            else DEFAULT_SEMESTER_FILLS.get(period_label, colors.white)
+        )
+        return _to_color(model_period_overrides[period_label], fallback)
+
+    family_overrides = _colour_mapping(_colour_mapping(colours_config, "families"), calendar_family)
+    family_period_overrides = _colour_mapping(family_overrides, "periods")
+    if period_label in family_period_overrides:
+        fallback = (
+            DEFAULT_TERM_FILLS.get(period_label, colors.white)
+            if calendar_type == "term"
+            else DEFAULT_SEMESTER_FILLS.get(period_label, colors.white)
+        )
+        return _to_color(family_period_overrides[period_label], fallback)
+
     if calendar_type == "term":
         term_overrides = _colour_mapping(colours_config, "terms")
         return _to_color(
@@ -1211,7 +1242,13 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
                 continue
             c.setLineWidth(0.4)
             c.setFillColor(
-                _period_fill_color(colours_tweaks, year.calendar_type, period_label)
+                _period_fill_color(
+                    colours_tweaks,
+                    year.calendar_type,
+                    period_label,
+                    year.calendar_family,
+                    year.calendar_model,
+                )
             )
             c.rect(x, period_box_bottom, period_width, period_height, fill=1)
             c.setFillColor(colors.black)

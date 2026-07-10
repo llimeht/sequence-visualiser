@@ -27,6 +27,55 @@
         "Year 4": "#ebebeb",
         "Year 5": "#e6e6e6"
       },
+      "models": {
+        "trimesters_standard": {
+          "periods": {
+            "Term 1": "#f2f2f2",
+            "Term 2": "#e8e8e8",
+            "Term 3": "#dedede"
+          }
+        },
+        "trimesters_extended": {
+          "periods": {
+            "Summer Term": "#fff5d6",
+            "Term 1": "#f2f2f2",
+            "Term 2": "#e8e8e8",
+            "Term 3": "#dedede"
+          }
+        },
+        "semesters_standard": {
+          "periods": {
+            "Semester 1": "#ededed",
+            "Semester 2": "#e2e2e2"
+          }
+        },
+        "semesters_extended": {
+          "periods": {
+            "Summer Term": "#fff5d6",
+            "Semester 1": "#ededed",
+            "Winter Term": "#dff1ff",
+            "Semester 2": "#e2e2e2"
+          }
+        }
+      },
+      "families": {
+        "trimesters": {
+          "periods": {
+            "Summer Term": "#fff5d6",
+            "Term 1": "#f2f2f2",
+            "Term 2": "#e8e8e8",
+            "Term 3": "#dedede"
+          }
+        },
+        "semesters": {
+          "periods": {
+            "Summer Term": "#fff5d6",
+            "Semester 1": "#ededed",
+            "Winter Term": "#dff1ff",
+            "Semester 2": "#e2e2e2"
+          }
+        }
+      },
       "terms": {
         "Term 1": "#f2f2f2",
         "Term 2": "#e8e8e8",

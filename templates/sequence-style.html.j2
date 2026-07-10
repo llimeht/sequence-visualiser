@@ -16,6 +16,13 @@
     --ink: #10233a;
     --accent: #0d5f8f;
     --line: #d4dfeb;
+    --period-term-1: {{ css_variables.get("period-term-1", "#f2f2f2") }};
+    --period-term-2: {{ css_variables.get("period-term-2", "#e8e8e8") }};
+    --period-term-3: {{ css_variables.get("period-term-3", "#dedede") }};
+    --period-semester-1: {{ css_variables.get("period-semester-1", "#ededed") }};
+    --period-semester-2: {{ css_variables.get("period-semester-2", "#e2e2e2") }};
+    --period-summer-term: {{ css_variables.get("period-summer-term", "#fff5d6") }};
+    --period-winter-term: {{ css_variables.get("period-winter-term", "#dff1ff") }};
   }
   body {
     margin: 0;
@@ -67,6 +74,19 @@
     background: #f4f9ff;
     border-bottom: 1px solid var(--line);
   }
+  .calendar-model-trimesters-standard .period-label.period-term-1 { background: var(--period-term-1); }
+  .calendar-model-trimesters-standard .period-label.period-term-2 { background: var(--period-term-2); }
+  .calendar-model-trimesters-standard .period-label.period-term-3 { background: var(--period-term-3); }
+  .calendar-model-trimesters-extended .period-label.period-summer-term { background: var(--period-summer-term); }
+  .calendar-model-trimesters-extended .period-label.period-term-1 { background: var(--period-term-1); }
+  .calendar-model-trimesters-extended .period-label.period-term-2 { background: var(--period-term-2); }
+  .calendar-model-trimesters-extended .period-label.period-term-3 { background: var(--period-term-3); }
+  .calendar-model-semesters-standard .period-label.period-semester-1 { background: var(--period-semester-1); }
+  .calendar-model-semesters-standard .period-label.period-semester-2 { background: var(--period-semester-2); }
+  .calendar-model-semesters-extended .period-label.period-summer-term { background: var(--period-summer-term); }
+  .calendar-model-semesters-extended .period-label.period-semester-1 { background: var(--period-semester-1); }
+  .calendar-model-semesters-extended .period-label.period-winter-term { background: var(--period-winter-term); }
+  .calendar-model-semesters-extended .period-label.period-semester-2 { background: var(--period-semester-2); }
   table {
     width: 100%;
     border-collapse: collapse;

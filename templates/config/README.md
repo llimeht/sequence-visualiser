@@ -20,8 +20,23 @@ Example plan file stem:
 The PDF renderer supports configurable background colours under `pdf.colours`:
 
 - `years`: per-year row background (`Year 1` to `Year 5`; numeric keys `1` to `5` are also accepted)
+- `models`: per-calendar-model period colours
+	- `trimesters_standard`: `Term 1`, `Term 2`, `Term 3`
+	- `trimesters_extended`: `Summer Term`, `Term 1`, `Term 2`, `Term 3`
+	- `semesters_standard`: `Semester 1`, `Semester 2`
+	- `semesters_extended`: `Summer Term`, `Semester 1`, `Winter Term`, `Semester 2`
+- `families`: per-calendar-family fallback period colours
+	- `trimesters`
+	- `semesters`
 - `terms`: per-term box background (`Term 1`, `Term 2`, `Term 3`)
 - `semesters`: per-semester box background (`Semester 1`, `Semester 2`)
+
+Colour precedence for period boxes:
+
+1. `pdf.colours.models.<calendar_model>.periods.<period_label>`
+2. `pdf.colours.families.<calendar_family>.periods.<period_label>`
+3. Existing `pdf.colours.terms` / `pdf.colours.semesters`
+4. Built-in defaults
 
 Accepted values:
 
@@ -29,6 +44,17 @@ Accepted values:
 - RGB triplet as `[r, g, b]` where each value is either `0..255` or `0..1`
 
 Invalid values fall back to built-in defaults.
+
+## Calendar models and period labels
+
+Period labels are inferred from course `period` values in plan JSON (no explicit model field required).
+
+- Trimesters standard: `Term 1`, `Term 2`, `Term 3`
+- Trimesters extended: `Summer Term`, `Term 1`, `Term 2`, `Term 3`
+- Semesters standard: `Semester 1`, `Semester 2`
+- Semesters extended: `Summer Term`, `Semester 1`, `Winter Term`, `Semester 2`
+
+When any extended label appears for a family, all in-scope year boxes for that family use the extended sequence. Empty periods are rendered as empty slots.
 
 ## PDF text templating and second page
 

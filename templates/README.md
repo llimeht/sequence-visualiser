@@ -160,20 +160,6 @@ Supported values under `tokens` include:
 
 Additional top-level template variables are available in PDF text templates: `plan`, `rule`, `years`, `tweaks`, `plan_code`, `program_id`, `program_code`, `specialisation_code`, `specialisation_codes`, `degree_code`.
 
-Migration note:
-
-- Legacy `{token}` placeholders are no longer expanded in PDF text.
-- Use Jinja expressions instead, for example:
-  - old: `{date}`
-  - new: `{{ tokens.date }}`
-- Dotted intake aliases were removed.
-  - removed: `intake.year` and `intake.period`
-  - use: `{{ tokens.intake_year }}` and `{{ tokens.intake_period }}`
-- `html.title`
-  - HTML `<title>` value.
-- `html.heading`
-  - HTML heading shown at the top of the page.
-
 Example minimal config:
 
 ```json

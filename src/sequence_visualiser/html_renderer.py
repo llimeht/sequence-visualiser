@@ -69,6 +69,42 @@ def render_html(context: RenderContext, templates_dir: Path, output_path: Path) 
         str(html_mapping.get("footer", "")), context, university_name
     )
 
+    css_variables: dict[str, str] = {
+        "period-term-1": "#f2f2f2",
+        "period-term-2": "#e8e8e8",
+        "period-term-3": "#dedede",
+        "period-semester-1": "#ededed",
+        "period-semester-2": "#e2e2e2",
+        "period-summer-term": "#fff5d6",
+        "period-winter-term": "#dff1ff",
+    }
+    if isinstance(context.tweaks.get("pdf"), dict):
+        pdf_mapping = cast(dict[str, object], context.tweaks["pdf"])
+        colours = pdf_mapping.get("colours")
+        if isinstance(colours, dict):
+            colours_mapping = cast(dict[str, object], colours)
+            terms = colours_mapping.get("terms")
+            if isinstance(terms, dict):
+                terms_mapping = cast(dict[str, object], terms)
+                for key in ("Term 1", "Term 2", "Term 3", "Summer Term"):
+                    value = terms_mapping.get(key)
+                    if isinstance(value, str):
+                        css_variables[f"period-{key.lower().replace(' ', '-')}"] = value
+            semesters = colours_mapping.get("semesters")
+            if isinstance(semesters, dict):
+                semesters_mapping = cast(dict[str, object], semesters)
+                for key in ("Semester 1", "Semester 2", "Summer Term", "Winter Term"):
+                    value = semesters_mapping.get(key)
+                    if isinstance(value, str):
+                        css_variables[f"period-{key.lower().replace(' ', '-')}"] = value
+
+    custom_css_variables = html_mapping.get("css_variables")
+    if isinstance(custom_css_variables, dict):
+        css_mapping = cast(dict[str, object], custom_css_variables)
+        for key, value in css_mapping.items():
+            if isinstance(value, str):
+                css_variables[str(key)] = value
+
     html = template.render(
         plan=context.plan,
         rule=context.rule_metadata,
@@ -84,6 +120,7 @@ def render_html(context: RenderContext, templates_dir: Path, output_path: Path) 
         top_disclaimer=top_disclaimer,
         footer_lines=footer.splitlines() if footer else [],
         html_metadata=html_metadata,
+        css_variables=css_variables,
     )
 
     output_path.write_text(html, encoding="utf-8")

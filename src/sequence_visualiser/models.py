@@ -75,6 +75,8 @@ class YearLayout:
     year: int
     calendar_type: str
     periods: list[PeriodLayout]
+    calendar_family: str = ""
+    calendar_model: str = ""
 
 
 @dataclass(frozen=True)

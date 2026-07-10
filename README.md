@@ -15,8 +15,14 @@ The CLI can process multiple plan files in one run (for example, shell globs).
 - Error handling: fail fast per bad plan, return non-zero if any plan failed.
 - Course display: show course code and title; show UoC only when not equal to 6.
 - HTML: year sections default to expanded.
-- PDF: fixed period columns per year (Term 1-3 or Semester 1-2), with blank placeholders for missing periods.
-- PDF: background colours for years/terms/semesters configurable via `templates/config/*.json`.
+- PDF: fixed period columns per year using inferred calendar model.
+- Supported period sequences:
+  - Trimesters standard: Term 1, Term 2, Term 3
+  - Trimesters extended: Summer Term, Term 1, Term 2, Term 3
+  - Semesters standard: Semester 1, Semester 2
+  - Semesters extended: Summer Term, Semester 1, Winter Term, Semester 2
+- When any extended label appears in a calendar family, all in-scope years for that family render the extended period sequence with blank placeholders for missing periods.
+- PDF and HTML period colours are configurable via `templates/config/*.json` (model/family-aware keys with fallback to legacy terms/semesters keys).
 
 ## Install
 

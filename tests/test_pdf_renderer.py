@@ -1833,3 +1833,142 @@ def test_render_pdf_second_page_top_disclaimer_can_be_suppressed(
     fake = _FakeCanvas.last
     assert fake is not None
     assert fake.drawn_strings.count("First page disclaimer") == 1
+
+
+def test_render_pdf_renders_extended_model_period_headers(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2028_S1.json"
+    sem1_course = Course(
+        enrol_year="Year 1",
+        year=2028,
+        period="Semester 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2028 S1",
+            courses=[sem1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2028",
+            validity_to="2030",
+        ),
+        tweaks={},
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2028,
+                calendar_type="semester",
+                periods=[PeriodLayout(period="Semester 1", courses=[sem1_course])],
+                calendar_family="semesters",
+                calendar_model="semesters_extended",
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    assert "Summer Term" not in fake.drawn_strings
+    assert "Winter Term" not in fake.drawn_strings
+    assert "Semester 1" in fake.drawn_strings
+
+
+def test_render_pdf_uses_model_colour_overrides_before_family(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    summer_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Summer Term",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[summer_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "pdf": {
+                "colours": {
+                    "models": {
+                        "trimesters_extended": {
+                            "periods": {"Summer Term": "#11aa22"}
+                        }
+                    },
+                    "families": {
+                        "trimesters": {"periods": {"Summer Term": "#aa2211"}}
+                    },
+                    "terms": {"Summer Term": "#2211aa"},
+                }
+            }
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Summer Term", courses=[summer_course])],
+                calendar_family="trimesters",
+                calendar_model="trimesters_extended",
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+
+    def _is_expected_model_green(fill: object) -> bool:
+        red = getattr(fill, "red", None)
+        green = getattr(fill, "green", None)
+        blue = getattr(fill, "blue", None)
+        if red is None or green is None or blue is None:
+            return False
+        return (
+            abs(float(red) - (17 / 255)) < 1e-6
+            and abs(float(green) - (170 / 255)) < 1e-6
+            and abs(float(blue) - (34 / 255)) < 1e-6
+        )
+
+    assert any(_is_expected_model_green(fill) for fill in fake.fill_color_calls)
