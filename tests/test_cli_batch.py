@@ -3,6 +3,11 @@ from pathlib import Path
 from _pytest.monkeypatch import MonkeyPatch
 
 from sequence_visualiser.cli import main
+from sequence_visualiser.metadata_resolver import resolve_rule_metadata
+from sequence_visualiser.plan_loader import load_plan
+from sequence_visualiser.render_tokens import runtime_token_values
+from sequence_visualiser.timeline import build_year_layouts
+from sequence_visualiser.models import RenderContext
 
 
 HTML_TEMPLATE = """<!doctype html><html><body>{% for year in years %}<details class=\"year\" open><summary>{{ year.enrol_year }}</summary></details>{% endfor %}</body></html>"""
@@ -207,6 +212,66 @@ def test_html_disclaimer_uses_datestamp_tokens(tmp_path: Path) -> None:
     html = (output_dir / "CEICAH3707_2026_T1.html").read_text(encoding="utf-8")
     assert "Guide for Test Uni as at 2026-05-28 (2026) in 2026 T1" in html
     assert "Issued for 3707 Flex in 2026" in html
+
+
+def test_runtime_tokens_include_plan_notes_fields(tmp_path: Path) -> None:
+        rules_dir = tmp_path / "rules"
+        rules_dir.mkdir()
+        (rules_dir / "CEICDH3707-2024-2029.json").write_text(
+                '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2024","to":"2029"}}',
+                encoding="utf-8",
+        )
+
+        plan_path = tmp_path / "CEICDH3707_2024_T2.json"
+        plan_path.write_text(
+                """
+                {
+                    "sheet": "CEICDH3707",
+                    "program": "CEICDH3707",
+                    "career": "Undergraduate",
+                    "uoc": 192,
+                    "intake": "2024 T2",
+                    "notes": {
+                        "graduate_outcome": "Student graduates late: one teaching period",
+                        "adjustment_type": "Other",
+                        "for_reviewers": [
+                            "Nucleus Study Guide PDF 2024",
+                            "nb - Student needs to take courses in summer terms to graduate on time."
+                        ],
+                        "for_students": [
+                            "Completing courses in summer terms permits on-time graduation"
+                        ]
+                    },
+                    "courses": []
+                }
+                """,
+                encoding="utf-8",
+        )
+
+        plan = load_plan(plan_path)
+        identity, metadata = resolve_rule_metadata(plan, rules_dir)
+        context = RenderContext(
+                plan=plan,
+                rule_metadata=metadata,
+                tweaks={"runtime": {"date": "2026-05-28", "year": "2026"}},
+                years=build_year_layouts(plan),
+                plan_code=identity.plan_code,
+                specialisation_code=identity.specialisation_code,
+                degree_code=identity.degree_code,
+                specialisation_codes=identity.specialisation_codes,
+        )
+
+        tokens = runtime_token_values(context, "Test Uni")
+
+        assert tokens["notes_graduate_outcome"] == "Student graduates late: one teaching period"
+        assert tokens["notes_adjustment_type"] == "Other"
+        assert tokens["notes_for_reviewers"] == (
+                "Nucleus Study Guide PDF 2024\n"
+                "nb - Student needs to take courses in summer terms to graduate on time."
+        )
+        assert tokens["notes_for_students"] == (
+                "Completing courses in summer terms permits on-time graduation"
+        )
 
 
 def test_cli_defaults_resolve_from_project_root_not_cwd(

@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Any
 
 
+def _empty_str_list() -> list[str]:
+    return []
+
+
 @dataclass(frozen=True)
 class Course:
     """Represents a single course in a plan."""
@@ -38,6 +42,7 @@ class Plan:
     courses: list[Course]
     source_path: Path
     plan_description: str = ""
+    notes: dict[str, Any] | None = None
     program_metadata: dict[str, Any] | None = None
 
 
@@ -83,4 +88,4 @@ class RenderContext:
     plan_code: str
     specialisation_code: str
     degree_code: str
-    specialisation_codes: list[str] = field(default_factory=list)
+    specialisation_codes: list[str] = field(default_factory=_empty_str_list)

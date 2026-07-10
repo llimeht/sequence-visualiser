@@ -9,12 +9,46 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any, cast
 
 from .models import Course, Plan
 
 
 class PlanParseError(ValueError):
     """Raised when a plan file cannot be parsed."""
+
+
+def _normalise_plan_notes(plan_path: Path, raw_notes: object) -> dict[str, Any] | None:
+    if raw_notes is None:
+        return None
+    if not isinstance(raw_notes, Mapping):
+        raise PlanParseError(f"Invalid notes in plan file {plan_path}: must be an object")
+
+    raw_notes_mapping = cast(Mapping[object, object], raw_notes)
+    notes: dict[str, Any] = {
+        str(key): cast(Any, value) for key, value in raw_notes_mapping.items()
+    }
+    list_fields = ("for_reviewers", "for_students")
+    for field_name in list_fields:
+        field_value = notes.get(field_name)
+        if field_value is None:
+            continue
+        if not isinstance(field_value, list):
+            raise PlanParseError(
+                f"Invalid notes.{field_name} in plan file {plan_path}: must be an array"
+            )
+        notes[field_name] = [
+            str(item).strip() for item in cast(list[object], field_value)
+        ]
+
+    scalar_fields = ("graduate_outcome", "adjustment_type")
+    for field_name in scalar_fields:
+        field_value = notes.get(field_name)
+        if field_value is None:
+            continue
+        notes[field_name] = str(field_value).strip()
+
+    return notes
 
 
 def load_plan(plan_path: Path) -> Plan:
@@ -67,9 +101,13 @@ def load_plan(plan_path: Path) -> Plan:
             raise PlanParseError(
                 f"Invalid program_metadata in plan file {plan_path}: must be an object"
             )
+        raw_program_metadata_mapping = cast(Mapping[object, object], raw_program_metadata)
         program_metadata = {
-            str(key): value for key, value in raw_program_metadata.items()
+            str(key): cast(Any, value)
+            for key, value in raw_program_metadata_mapping.items()
         }
+
+    notes = _normalise_plan_notes(plan_path, payload.get("notes"))
 
     return Plan(
         sheet=str(payload["sheet"]),
@@ -78,6 +116,7 @@ def load_plan(plan_path: Path) -> Plan:
         uoc=int(payload["uoc"]),
         intake=str(payload["intake"]),
         plan_description=str(payload.get("plan_description", "")).strip(),
+        notes=notes,
         courses=courses,
         source_path=plan_path,
         program_metadata=program_metadata,

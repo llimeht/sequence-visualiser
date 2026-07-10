@@ -150,6 +150,10 @@ Supported values under `tokens` include:
 - `tokens.specialisation_code`
 - `tokens.specialisation_codes` (comma-separated list of specialisation codes)
 - `tokens.rule_file`
+- `tokens.notes_graduate_outcome`
+- `tokens.notes_adjustment_type`
+- `tokens.notes_for_reviewers` (newline-separated)
+- `tokens.notes_for_students` (newline-separated)
 
 Additional top-level template variables are available in PDF text templates: `plan`, `rule`, `years`, `tweaks`, `plan_code`, `program_id`, `program_code`, `specialisation_code`, `specialisation_codes`, `degree_code`.
 

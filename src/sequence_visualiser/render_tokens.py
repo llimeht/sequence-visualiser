@@ -2,9 +2,31 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date
-from typing import cast
+from typing import Any, cast
 
 from .models import RenderContext
+
+
+def _notes_token_values(context: RenderContext) -> dict[str, str]:
+    notes = context.plan.notes if isinstance(context.plan.notes, dict) else {}
+
+    def _string_value(field_name: str) -> str:
+        value = notes.get(field_name, "")
+        return str(value).strip() if value is not None else ""
+
+    def _list_value(field_name: str) -> str:
+        value = notes.get(field_name)
+        if not isinstance(value, list):
+            return ""
+        items = cast(list[Any], value)
+        return "\n".join(str(item).strip() for item in items if str(item).strip())
+
+    return {
+        "notes_graduate_outcome": _string_value("graduate_outcome"),
+        "notes_adjustment_type": _string_value("adjustment_type"),
+        "notes_for_reviewers": _list_value("for_reviewers"),
+        "notes_for_students": _list_value("for_students"),
+    }
 
 
 def runtime_token_values(
@@ -48,6 +70,7 @@ def runtime_token_values(
         "specialisation_code": context.specialisation_code,
         "specialisation_codes": specialisation_codes_text,
         "rule_file": context.rule_metadata.rule_file.name,
+        **_notes_token_values(context),
     }
 
 
