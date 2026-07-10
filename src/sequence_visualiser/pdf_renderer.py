@@ -893,6 +893,33 @@ def _footer_block_height(footer_left_lines: list[str], footer_right_lines: list[
     return (footer_line_count * FOOTER_LINE_HEIGHT) + FOOTER_TOP_GAP
 
 
+def _wrapped_lines_preserving_blank_lines(
+    text: str,
+    *,
+    font_name: str,
+    font_size: int,
+    max_width: float,
+) -> list[str]:
+    """Wrap text while preserving explicit blank lines from newline-separated paragraphs."""
+    if not text:
+        return []
+
+    wrapped: list[str] = []
+    for raw_line in text.splitlines():
+        if not raw_line.strip():
+            wrapped.append("")
+            continue
+        wrapped.extend(
+            simpleSplit(  # type: ignore[no-untyped-call]
+                raw_line,
+                font_name,
+                font_size,
+                max_width,
+            )
+        )
+    return wrapped
+
+
 def _draw_second_page_content(
     c: canvas.Canvas,
     *,
@@ -942,15 +969,11 @@ def _draw_second_page_content(
         SECOND_PAGE_DEFAULT_DISCLAIMER_LINE_HEIGHT,
     )
 
-    disclaimer_lines = (
-        simpleSplit(  # type: ignore[no-untyped-call]
-            bottom_disclaimer_text,
-            cast(str, fonts["body_regular"]),
-            disclaimer_font_size,
-            content_width - (2 * SECOND_PAGE_BOX_PADDING),
-        )
-        if bottom_disclaimer_text
-        else []
+    disclaimer_lines = _wrapped_lines_preserving_blank_lines(
+        bottom_disclaimer_text,
+        font_name=cast(str, fonts["body_regular"]),
+        font_size=disclaimer_font_size,
+        max_width=content_width - (2 * SECOND_PAGE_BOX_PADDING),
     )
     disclaimer_box_height = (
         (2 * SECOND_PAGE_BOX_PADDING)
@@ -982,17 +1005,18 @@ def _draw_second_page_content(
             c.drawString(text_left, text_y - info_font_size, info_title)
             text_y -= info_line_height
 
-        info_lines = simpleSplit(  # type: ignore[no-untyped-call]
+        info_lines = _wrapped_lines_preserving_blank_lines(
             info_text,
-            cast(str, fonts["body_regular"]),
-            info_font_size,
-            text_width,
+            font_name=cast(str, fonts["body_regular"]),
+            font_size=info_font_size,
+            max_width=text_width,
         )
         c.setFont(cast(str, fonts["body_regular"]), info_font_size)
         for line in info_lines:
             if text_y - info_font_size < (info_box_bottom + SECOND_PAGE_BOX_PADDING):
                 break
-            c.drawString(text_left, text_y - info_font_size, line)
+            if line:
+                c.drawString(text_left, text_y - info_font_size, line)
             text_y -= info_line_height
 
     if disclaimer_box_height > 0:
@@ -1010,7 +1034,8 @@ def _draw_second_page_content(
         text_y = disclaimer_top - SECOND_PAGE_BOX_PADDING
         text_left = margin + SECOND_PAGE_BOX_PADDING
         for line in disclaimer_lines:
-            c.drawString(text_left, text_y - disclaimer_font_size, line)
+            if line:
+                c.drawString(text_left, text_y - disclaimer_font_size, line)
             text_y -= disclaimer_line_height
 
 

@@ -1632,3 +1632,75 @@ def test_render_pdf_second_page_renders_info_and_disclaimer_boxes(
     assert "Term-1 guidance for 3707" in fake.drawn_strings
     assert "Bottom disclaimer for CEICAH3707" in fake.drawn_strings
     assert fake.drawn_strings.count("UNSW Sydney") >= 2
+
+
+def test_render_pdf_second_page_preserves_blank_line_spacing(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+            program_id="3707",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "second_page": {
+                    "enabled": True,
+                    "info_box_title": "Spacing check",
+                    "info_box_text": "Line A\n\nLine B",
+                },
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    assert fake.show_page_calls == 2
+
+    line_a = [item for item in fake.drawn_text if item[2] == "Line A"]
+    line_b = [item for item in fake.drawn_text if item[2] == "Line B"]
+    assert line_a
+    assert line_b
+
+    # Blank line should create one additional line-height gap between adjacent lines.
+    y_gap = line_a[0][1] - line_b[0][1]
+    assert y_gap == pytest.approx(24)
