@@ -76,6 +76,7 @@ DEFAULT_HEADER_RIGHT_LINES = [
     "Majors: {{ tokens.majors }}",
 ]
 SECOND_PAGE_DEFAULT_INFO_FONT_SIZE = 10
+SECOND_PAGE_DEFAULT_INFO_TITLE_HEIGHT = 16
 SECOND_PAGE_DEFAULT_INFO_LINE_HEIGHT = 12
 SECOND_PAGE_DEFAULT_DISCLAIMER_FONT_SIZE = 8
 SECOND_PAGE_DEFAULT_DISCLAIMER_LINE_HEIGHT = 10
@@ -963,6 +964,11 @@ def _draw_second_page_content(
         "info_line_height_pt",
         SECOND_PAGE_DEFAULT_INFO_LINE_HEIGHT,
     )
+    info_title_height = _configured_font_size(
+        cast(dict[str, Any], second_page),
+        "info_title_height_pt",
+        SECOND_PAGE_DEFAULT_INFO_TITLE_HEIGHT,
+    )
     disclaimer_line_height = _configured_font_size(
         cast(dict[str, Any], second_page),
         "disclaimer_line_height_pt",
@@ -1003,7 +1009,7 @@ def _draw_second_page_content(
         if info_title:
             c.setFont(cast(str, fonts["body_bold"]), info_font_size)
             c.drawString(text_left, text_y - info_font_size, info_title)
-            text_y -= info_line_height
+            text_y -= info_title_height
 
         info_lines = _wrapped_lines_preserving_blank_lines(
             info_text,
