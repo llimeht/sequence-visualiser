@@ -1,17 +1,14 @@
-"""
-sequence_visualiser.html_renderer
-================================
-Renders plan data to HTML using Jinja2 templates. Supports template overrides.
-"""
+"""Renders plan data to HTML using Jinja2 templates. Supports template overrides."""
 
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
+from typing import cast
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .models import RenderContext
+from .render_tokens import expand_runtime_tokens, runtime_token_values
 
 
 def _build_html_metadata(context: RenderContext, university_name: str) -> dict[str, str]:
@@ -21,10 +18,9 @@ def _build_html_metadata(context: RenderContext, university_name: str) -> dict[s
     if stream_names:
         degree_and_streams = f"{degree_and_streams} - {', '.join(stream_names)}"
 
-    runtime = context.tweaks.get("runtime", {})
-    runtime_mapping = runtime if isinstance(runtime, dict) else {}
-    information_date = str(runtime_mapping.get("date", "")).strip() or date.today().isoformat()
-    copyright_year = str(runtime_mapping.get("year", "")).strip() or information_date[:4]
+    tokens = runtime_token_values(context, university_name)
+    information_date = tokens["date"]
+    copyright_year = tokens["year"]
 
     source_filename = context.plan.source_path.name
     rules_filename = context.rule_metadata.rule_file.name
@@ -60,9 +56,18 @@ def render_html(context: RenderContext, templates_dir: Path, output_path: Path) 
     template = env.get_template("sequence.html.j2")
 
     branding = context.tweaks.get("branding", {})
-    branding_mapping = branding if isinstance(branding, dict) else {}
+    branding_mapping = cast(dict[str, object], branding) if isinstance(branding, dict) else {}
     university_name = str(branding_mapping.get("university_name", "")).strip() or "University"
+    tokens = runtime_token_values(context, university_name)
     html_metadata = _build_html_metadata(context, university_name)
+    html_tweaks = context.tweaks.get("html", {})
+    html_mapping = cast(dict[str, object], html_tweaks) if isinstance(html_tweaks, dict) else {}
+    top_disclaimer = expand_runtime_tokens(
+        str(html_mapping.get("top_disclaimer", "")), context, university_name
+    )
+    footer = expand_runtime_tokens(
+        str(html_mapping.get("footer", "")), context, university_name
+    )
 
     html = template.render(
         plan=context.plan,
@@ -75,6 +80,9 @@ def render_html(context: RenderContext, templates_dir: Path, output_path: Path) 
         specialisation_code=context.specialisation_code,
         specialisation_codes=context.specialisation_codes,
         degree_code=context.degree_code,
+        tokens=tokens,
+        top_disclaimer=top_disclaimer,
+        footer_lines=footer.splitlines() if footer else [],
         html_metadata=html_metadata,
     )
 

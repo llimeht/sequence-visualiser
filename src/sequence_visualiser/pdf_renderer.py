@@ -10,7 +10,6 @@ import logging
 import re
 from importlib import import_module
 from collections.abc import Mapping
-from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
@@ -23,6 +22,11 @@ from reportlab.pdfbase.ttfonts import TTFont, TTFError
 from reportlab.pdfgen import canvas
 
 from .models import Course, RenderContext, YearLayout
+from .render_tokens import (
+    expand_runtime_tokens,
+    expand_tokens_with_values,
+    runtime_token_values,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -211,9 +215,9 @@ def build_pdf_metadata(context: RenderContext, university_name: str) -> dict[str
     intake = context.plan.intake
     source_filename = context.plan.source_path.name
     rules_filename = context.rule_metadata.rule_file.name
-    runtime = _colour_mapping(context.tweaks, "runtime")
-    information_date = str(runtime.get("date", "")).strip() or date.today().isoformat()
-    copyright_year = str(runtime.get("year", "")).strip() or information_date[:4]
+    tokens = runtime_token_values(context, university_name)
+    information_date = tokens["date"]
+    copyright_year = tokens["year"]
 
     return {
         "title": f"Enrolment Sequence for {plan} - {intake} - {university_name}",
@@ -233,56 +237,12 @@ def build_pdf_metadata(context: RenderContext, university_name: str) -> dict[str
 
 def _expand_tokens(text: str, context: RenderContext, university_name: str) -> str:
     """Expand supported text tokens from runtime and branding values."""
-    return _expand_tokens_with_values(text, _token_values(context, university_name))
-
-
-def _token_values(context: RenderContext, university_name: str) -> dict[str, str]:
-    """Return token values used by text templates."""
-    runtime = _colour_mapping(context.tweaks, "runtime")
-    date_value = str(runtime.get("date", "")).strip() or date.today().isoformat()
-    year_value = str(runtime.get("year", "")).strip() or date_value[:4]
-    intake_value = context.plan.intake.strip()
-    intake_parts = intake_value.split(maxsplit=1)
-    intake_year_value = intake_parts[0] if intake_parts else ""
-    intake_period_value = intake_parts[1] if len(intake_parts) > 1 else ""
-    program_id_value = context.rule_metadata.program_id or context.degree_code
-    specialisation_codes_text = (
-        ", ".join(context.specialisation_codes)
-        if context.specialisation_codes
-        else context.specialisation_code
-    )
-    majors_text = (
-        ", ".join(context.rule_metadata.specialisation_names)
-        if context.rule_metadata.specialisation_names
-        else "None"
-    )
-    return {
-        "date": date_value,
-        "year": year_value,
-        "university_name": university_name,
-        "plan_code": context.plan_code,
-        "program_code": program_id_value,
-        "program_id": program_id_value,
-        "intake": intake_value,
-        "intake_year": intake_year_value,
-        "intake.year": intake_year_value,
-        "intake_period": intake_period_value,
-        "intake.period": intake_period_value,
-        "program_name": context.rule_metadata.program_name,
-        "majors": majors_text,
-        "degree_code": program_id_value,
-        "specialisation_code": context.specialisation_code,
-        "specialisation_codes": specialisation_codes_text,
-        "rule_file": context.rule_metadata.rule_file.name,
-    }
+    return expand_runtime_tokens(text, context, university_name)
 
 
 def _expand_tokens_with_values(text: str, tokens: Mapping[str, str]) -> str:
     """Expand supported {token} placeholders in text."""
-    expanded = text
-    for token, value in tokens.items():
-        expanded = expanded.replace(f"{{{token}}}", value)
-    return expanded
+    return expand_tokens_with_values(text, tokens)
 
 
 def _text_lines(value: object) -> list[str]:
@@ -772,7 +732,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
     university_name = str(branding.get("university_name", ""))
     if not university_name:
         university_name = "University"
-    tokens = _token_values(context, university_name)
+    tokens = runtime_token_values(context, university_name)
 
     metadata = build_pdf_metadata(context, university_name)
     c.setTitle(metadata["title"])
