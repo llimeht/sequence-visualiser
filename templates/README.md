@@ -128,6 +128,8 @@ Supported header/footer tokens include:
 - `{year}`
 - `{university_name}`
 - `{plan_code}`
+- `{plan_description}` (short descriptor to distinguish plan variants)
+- `{plan_description_short}` (alias of `{plan_description}`)
 - `{program_code}` (canonical program identifier; sourced from `program_id` and mirrored by `{program_id}`)
 - `{program_id}` (canonical program identifier)
 - `{intake}`

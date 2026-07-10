@@ -137,6 +137,7 @@ def _load_rule_metadata(rule_file: Path) -> RuleMetadata:
     )
     validity_from = str(validity.get("from", ""))
     validity_to = str(validity.get("to", ""))
+    plan_description = str(payload.get("plan_description", "")).strip()
 
     return RuleMetadata(
         rule_file=rule_file,
@@ -145,6 +146,7 @@ def _load_rule_metadata(rule_file: Path) -> RuleMetadata:
         validity_from=validity_from,
         validity_to=validity_to,
         program_id=program_id,
+        plan_description=plan_description,
     )
 
 
@@ -257,6 +259,7 @@ def _resolve_plan_embedded_metadata(plan: Plan) -> tuple[ProgramIdentity, RuleMe
         validity_from="",
         validity_to="",
         program_id=program_id,
+        plan_description=plan.plan_description,
     )
     return identity, metadata_payload
 
@@ -334,6 +337,7 @@ def _resolve_spreadsheet_metadata(
     specialisation_names = _parse_listish(
         row.get("specialisation_names", ""), "specialisation_names"
     )
+    plan_description = str(row.get("plan_description", "")).strip() or plan.plan_description
 
     missing: list[str] = []
     if not plan_code:
@@ -364,8 +368,24 @@ def _resolve_spreadsheet_metadata(
         validity_from="",
         validity_to="",
         program_id=program_id,
+        plan_description=plan_description,
     )
     return identity, metadata_payload
+
+
+def _with_plan_description_fallback(plan: Plan, metadata: RuleMetadata) -> RuleMetadata:
+    """Use plan-level description when source metadata does not provide one."""
+    if metadata.plan_description or not plan.plan_description:
+        return metadata
+    return RuleMetadata(
+        rule_file=metadata.rule_file,
+        program_name=metadata.program_name,
+        specialisation_names=metadata.specialisation_names,
+        validity_from=metadata.validity_from,
+        validity_to=metadata.validity_to,
+        program_id=metadata.program_id,
+        plan_description=plan.plan_description,
+    )
 
 
 def resolve_rule_metadata(
@@ -392,7 +412,9 @@ def resolve_rule_metadata(
 
         exact_rule = rules_dir / f"{direct_identity.plan_code}.json"
         if exact_rule.exists():
-            return direct_identity, _load_rule_metadata(exact_rule)
+            return direct_identity, _with_plan_description_fallback(
+                plan, _load_rule_metadata(exact_rule)
+            )
 
     identity = extract_program_identity(plan)
     intake_year = _parse_intake_year(plan.intake)
@@ -425,7 +447,7 @@ def resolve_rule_metadata(
         )
 
     selected = sorted(candidates, key=lambda item: item[1])[0][0]
-    return identity, _load_rule_metadata(selected)
+    return identity, _with_plan_description_fallback(plan, _load_rule_metadata(selected))
 
 
 def resolve_metadata(

@@ -17,6 +17,7 @@ def _write_plan(path: Path, period: str) -> None:
           "career": "Undergraduate",
           "uoc": 192,
           "intake": "2026 T1",
+          "plan_description": "Flex",
           "courses": [
             {{"enrol_year": "Year 1", "year": 2026, "period": "{period}", "course_n": "Course 1", "code": "MATH1131", "title": "Math", "uoc": 6, "prerequisites": "."}}
           ]
@@ -163,7 +164,7 @@ def test_html_disclaimer_uses_datestamp_tokens(tmp_path: Path) -> None:
     local_overrides = tmp_path / "template-overrides" / "config"
     local_overrides.mkdir(parents=True)
     (templates_dir / "config" / "defaults.json").write_text(
-        '{"branding":{"university_name":"Test Uni"},"html":{"top_disclaimer":"Guide for {university_name} as at {date} ({year}) in {intake_year} {intake_period} / {intake.year} {intake.period}","footer":"Issued for {program_code} in {intake_year}"}}',
+        '{"branding":{"university_name":"Test Uni"},"html":{"top_disclaimer":"Guide for {university_name} as at {date} ({year}) in {intake_year} {intake_period} / {intake.year} {intake.period}","footer":"Issued for {program_code} {plan_description} in {intake_year}"}}',
         encoding="utf-8",
     )
     (templates_dir / "sequence.html.j2").write_text(
@@ -205,7 +206,7 @@ def test_html_disclaimer_uses_datestamp_tokens(tmp_path: Path) -> None:
     assert rc == 0
     html = (output_dir / "CEICAH3707_2026_T1.html").read_text(encoding="utf-8")
     assert "Guide for Test Uni as at 2026-05-28 (2026) in 2026 T1 / 2026 T1" in html
-    assert "Issued for 3707 in 2026" in html
+    assert "Issued for 3707 Flex in 2026" in html
 
 
 def test_cli_defaults_resolve_from_project_root_not_cwd(

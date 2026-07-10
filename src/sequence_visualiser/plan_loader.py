@@ -77,6 +77,7 @@ def load_plan(plan_path: Path) -> Plan:
         career=str(payload["career"]),
         uoc=int(payload["uoc"]),
         intake=str(payload["intake"]),
+        plan_description=str(payload.get("plan_description", "")).strip(),
         courses=courses,
         source_path=plan_path,
         program_metadata=program_metadata,

@@ -514,6 +514,7 @@ def test_render_pdf_header_lines_can_be_swapped_via_config(
             validity_from="2026",
             validity_to="2028",
             program_id="3707",
+            plan_description="Flex",
         ),
         tweaks={
             "branding": {"university_name": "UNSW Sydney"},
@@ -524,7 +525,7 @@ def test_render_pdf_header_lines_can_be_swapped_via_config(
                 ],
                 "header_right_lines": [
                     "{university_name}",
-                    "{program_code} - {intake}",
+                    "{program_code} {plan_description} - {intake}",
                 ],
             },
         },
@@ -553,7 +554,7 @@ def test_render_pdf_header_lines_can_be_swapped_via_config(
     assert "Program: Bachelor of Advanced Computing" in left_aligned
     assert "Majors: Artificial Intelligence, Security" in left_aligned
     assert "UNSW Sydney" in right_aligned
-    assert "3707 - 2026 T1" in right_aligned
+    assert "3707 Flex - 2026 T1" in right_aligned
 
 
 def test_render_pdf_year_label_includes_calendar_year(

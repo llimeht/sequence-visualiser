@@ -13,7 +13,7 @@ def test_resolve_rule_prefers_matching_year_range(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (rules_dir / "CEICAH3707-2026-2029.json").write_text(
-        '{"program":{"name":"Specific"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+      '{"program":{"name":"Specific"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"},"plan_description":"Flex"}',
         encoding="utf-8",
     )
 
@@ -46,6 +46,7 @@ def test_resolve_rule_prefers_matching_year_range(tmp_path: Path) -> None:
     plan = load_plan(plan_path)
     _, metadata = resolve_rule_metadata(plan, rules_dir)
     assert metadata.program_name == "Specific"
+    assert metadata.plan_description == "Flex"
     assert metadata.program_id == ""
     assert metadata.validity_from == "2026"
 
@@ -159,6 +160,7 @@ def test_resolve_metadata_from_plan_embedded_block(tmp_path: Path) -> None:
           "career": "Undergraduate",
           "uoc": 192,
           "intake": "2026 T1",
+          "plan_description": "Accelerated",
           "program_metadata": {
             "plan_code": "CEICAH3707",
             "program_id": "3707",
@@ -184,6 +186,7 @@ def test_resolve_metadata_from_plan_embedded_block(tmp_path: Path) -> None:
     assert identity.degree_code == "3707"
     assert metadata.program_id == "3707"
     assert metadata.program_name == "Bachelor of Engineering (Honours)"
+    assert metadata.plan_description == "Accelerated"
     assert metadata.rule_file == plan_path
 
 
@@ -192,8 +195,8 @@ def test_resolve_metadata_from_spreadsheet_row(tmp_path: Path) -> None:
     mapping.write_text(
         "\n".join(
             [
-                "plan_filename,plan_code,program_id,program_name,specialisation_codes,specialisation_names",
-                "CEICAH3707_2026_T1,CEICAH3707,3707,Bachelor of Engineering (Honours),CEICAH,Chemical Engineering",
+        "plan_filename,plan_code,program_id,program_name,specialisation_codes,specialisation_names,plan_description",
+        "CEICAH3707_2026_T1,CEICAH3707,3707,Bachelor of Engineering (Honours),CEICAH,Chemical Engineering,Honours",
             ]
         ),
         encoding="utf-8",
@@ -227,6 +230,7 @@ def test_resolve_metadata_from_spreadsheet_row(tmp_path: Path) -> None:
     assert identity.degree_code == "3707"
     assert metadata.program_id == "3707"
     assert metadata.program_name == "Bachelor of Engineering (Honours)"
+    assert metadata.plan_description == "Honours"
     assert metadata.rule_file == mapping
 
 

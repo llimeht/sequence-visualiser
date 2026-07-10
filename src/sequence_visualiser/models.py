@@ -37,6 +37,7 @@ class Plan:
     intake: str
     courses: list[Course]
     source_path: Path
+    plan_description: str = ""
     program_metadata: dict[str, Any] | None = None
 
 
@@ -50,6 +51,7 @@ class RuleMetadata:
     validity_from: str
     validity_to: str
     program_id: str = ""
+    plan_description: str = ""
 
 
 @dataclass(frozen=True)
