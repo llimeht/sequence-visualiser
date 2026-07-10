@@ -5,7 +5,11 @@ from _pytest.monkeypatch import MonkeyPatch
 from sequence_visualiser.cli import main
 from sequence_visualiser.metadata_resolver import resolve_rule_metadata
 from sequence_visualiser.plan_loader import load_plan
-from sequence_visualiser.render_tokens import runtime_token_values
+from sequence_visualiser.render_tokens import (
+    TokenExpansionError,
+    expand_runtime_tokens,
+    runtime_token_values,
+)
 from sequence_visualiser.timeline import build_year_layouts
 from sequence_visualiser.models import RenderContext
 
@@ -212,6 +216,90 @@ def test_html_disclaimer_uses_datestamp_tokens(tmp_path: Path) -> None:
     html = (output_dir / "CEICAH3707_2026_T1.html").read_text(encoding="utf-8")
     assert "Guide for Test Uni as at 2026-05-28 (2026) in 2026 T1" in html
     assert "Issued for 3707 Flex in 2026" in html
+
+
+def test_html_disclaimer_fails_for_unexpanded_token(tmp_path: Path) -> None:
+    templates_dir = tmp_path / "templates"
+    (templates_dir / "config").mkdir(parents=True)
+    local_overrides = tmp_path / "template-overrides" / "config"
+    local_overrides.mkdir(parents=True)
+    (templates_dir / "config" / "defaults.json").write_text(
+        '{"branding":{"university_name":"Test Uni"},"html":{"top_disclaimer":"Guide for {unknown_token}"}}',
+        encoding="utf-8",
+    )
+    (templates_dir / "sequence.html.j2").write_text(
+        """<!doctype html><html><body><section><div>{{ top_disclaimer }}</div></section></body></html>""",
+        encoding="utf-8",
+    )
+
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan(plan, "Term 1")
+
+    output_dir = tmp_path / "out"
+    rc = main(
+        [
+            str(plan),
+            "--output-dir",
+            str(output_dir),
+            "--rules-dir",
+            str(rules_dir),
+            "--templates-dir",
+            str(templates_dir),
+            "--config-dir",
+            str(templates_dir / "config"),
+            "--template-overrides-dir",
+            str(local_overrides),
+            "--formats",
+            "html",
+            "--datestamp",
+            "2026-05-28",
+        ]
+    )
+
+    assert rc == 1
+    assert not (output_dir / "CEICAH3707_2026_T1.html").exists()
+
+
+def test_expand_runtime_tokens_raises_for_unexpanded_placeholders(tmp_path: Path) -> None:
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan(plan, "Term 1")
+    loaded_plan = load_plan(plan)
+    identity, metadata = resolve_rule_metadata(loaded_plan, rules_dir)
+    context = RenderContext(
+        plan=loaded_plan,
+        rule_metadata=metadata,
+        tweaks={"runtime": {"date": "2026-05-28", "year": "2026"}},
+        years=build_year_layouts(loaded_plan),
+        plan_code=identity.plan_code,
+        specialisation_code=identity.specialisation_code,
+        degree_code=identity.degree_code,
+        specialisation_codes=identity.specialisation_codes,
+    )
+
+    try:
+        expand_runtime_tokens(
+            "Guide for {unknown_token}",
+            context,
+            "Test Uni",
+        )
+        raise AssertionError("Expected TokenExpansionError")
+    except TokenExpansionError as exc:
+        message = str(exc)
+        assert "{unknown_token}" in message
 
 
 def test_runtime_tokens_include_plan_notes_fields(tmp_path: Path) -> None:

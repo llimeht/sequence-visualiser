@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from jinja2 import Environment
+from jinja2 import Environment, StrictUndefined
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import mm
@@ -27,6 +27,8 @@ from .render_tokens import runtime_token_values
 from .timeline import CALENDAR_MODELS
 
 logger = logging.getLogger(__name__)
+
+_UNRESOLVED_PDF_TOKEN_PATTERN = re.compile(r"\{\{\s*tokens\.[^}]+\}\}")
 
 
 class _GetFont(Protocol):
@@ -601,6 +603,12 @@ def _render_pdf_template_text(
         rendered = template_env.from_string(template_text).render(**template_context)
     except Exception as exc:  # pragma: no cover - exact exception depends on Jinja internals.
         raise PdfRenderError(f"Invalid PDF text template: {exc}") from exc
+    unresolved = _UNRESOLVED_PDF_TOKEN_PATTERN.findall(str(rendered))
+    if unresolved:
+        unresolved_list = ", ".join(sorted(set(unresolved)))
+        raise PdfRenderError(
+            f"Unexpanded PDF token placeholder(s): {unresolved_list}"
+        )
     return str(rendered).strip()
 
 
@@ -1099,7 +1107,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
     if not university_name:
         university_name = "University"
     tokens = runtime_token_values(context, university_name)
-    template_env = Environment(autoescape=False)
+    template_env = Environment(autoescape=False, undefined=StrictUndefined)
     template_context = _pdf_template_context(context, university_name, tokens)
 
     metadata = build_pdf_metadata(context, university_name)

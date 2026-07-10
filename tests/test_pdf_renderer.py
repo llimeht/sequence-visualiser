@@ -12,7 +12,7 @@ from sequence_visualiser.models import (
     RuleMetadata,
     YearLayout,
 )
-from sequence_visualiser.pdf_renderer import build_pdf_metadata, render_pdf
+from sequence_visualiser.pdf_renderer import PdfRenderError, build_pdf_metadata, render_pdf
 
 
 def _build_context(tmp_path: Path, stream_names: list[str]) -> RenderContext:
@@ -489,6 +489,65 @@ def test_render_pdf_footer_page_tokens_are_expanded(
     assert fake is not None
     assert "Page 1 of 2." in fake.drawn_strings
     assert "Page 2 of 2." in fake.drawn_strings
+
+
+def test_render_pdf_raises_for_unexpanded_token_placeholder(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "footer_left": "Bad token: {{ tokens.does_not_exist }}",
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+
+    try:
+        render_pdf(context, tmp_path / "out.pdf", tmp_path)
+        raise AssertionError("Expected PdfRenderError")
+    except PdfRenderError as exc:
+        assert "does_not_exist" in str(exc)
 
 
 def test_render_pdf_header_includes_program_and_majors(

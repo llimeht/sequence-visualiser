@@ -27,6 +27,7 @@ from .models import RenderContext
 from .pdf_renderer import PdfRenderError, render_pdf
 from .plan_loader import PlanParseError, load_plan
 from .metadata_resolver import MetadataSource, RuleResolutionError, resolve_metadata
+from .render_tokens import TokenExpansionError
 from .timeline import TimelineError, build_year_layouts
 
 
@@ -266,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
             ConfigError,
             CourseOverrideError,
             PdfRenderError,
+            TokenExpansionError,
         ) as exc:
             failures.append(PlanFailure(plan=plan_file, reason=str(exc)))
             print(f"FAIL: {plan_file} -> {exc}", file=sys.stderr)

@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from datetime import date
 from typing import cast
 
 from .models import RenderContext
+
+
+class TokenExpansionError(ValueError):
+    """Raised when text still contains unexpanded token placeholders."""
+
+
+_BRACE_TOKEN_PATTERN = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 
 
 def _notes_token_values(context: RenderContext) -> dict[str, str]:
@@ -83,6 +91,13 @@ def expand_tokens_with_values(text: str, tokens: Mapping[str, str]) -> str:
     expanded = text
     for token, value in tokens.items():
         expanded = expanded.replace(f"{{{token}}}", value)
+
+    unresolved: set[str] = set()
+    unresolved.update(match.group(0) for match in _BRACE_TOKEN_PATTERN.finditer(expanded))
+    if unresolved:
+        unresolved_list = ", ".join(sorted(unresolved))
+        raise TokenExpansionError(f"Unexpanded token placeholder(s): {unresolved_list}")
+
     return expanded
 
 
