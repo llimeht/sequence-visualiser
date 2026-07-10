@@ -107,6 +107,9 @@ Supported keys in the current implementation:
 - `pdf.second_page`
   - Optional second-page configuration block.
   - `enabled` controls whether a second PDF page is rendered.
+  - `top_disclaimer` optionally overrides the top disclaimer on page 2 only.
+  - If `top_disclaimer` is omitted under `pdf.second_page`, page 2 reuses `pdf.top_disclaimer`.
+  - Set `pdf.second_page.top_disclaimer` to an empty string to suppress the page-2 top disclaimer.
   - `info_box_title` and `info_box_text` render in a bordered info box.
   - `bottom_disclaimer` renders in a full-width bordered box near the bottom of page 2.
   - `footer_left` and `footer_right` optionally override page-2 footer lines.

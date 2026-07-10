@@ -1278,14 +1278,19 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
             right_header_lines=right_header_lines,
         )
 
+        second_page_top_disclaimer = _render_pdf_template_text(
+            second_page.get("top_disclaimer", top_disclaimer),
+            template_env,
+            template_context,
+        )
         second_page_top_disclaimer_lines = (
             simpleSplit(  # type: ignore[no-untyped-call]
-                top_disclaimer,
+                second_page_top_disclaimer,
                 cast(str, fonts["body_regular"]),
                 TOP_DISCLAIMER_FONT_SIZE,
                 content_width,
             )
-            if top_disclaimer
+            if second_page_top_disclaimer
             else []
         )
 
