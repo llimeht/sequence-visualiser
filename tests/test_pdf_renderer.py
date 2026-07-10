@@ -388,8 +388,11 @@ def test_render_pdf_renders_disclaimer_and_footers(
             "branding": {"university_name": "UNSW Sydney"},
             "runtime": {"date": "2026-05-28", "year": "2026"},
             "pdf": {
-                "top_disclaimer": "Guide only for {university_name} on {date}.",
-                "footer_left": "Check handbook.",
+                "top_disclaimer": (
+                    "Guide only for {university_name} in {intake_year} {intake_period} "
+                    "({intake.year} {intake.period}) on {date}."
+                ),
+                "footer_left": "Check handbook for {intake_year}.",
                 "footer_right": "Information correct as at {date}\\nCopyright © {university_name} {year}",
             },
         },
@@ -411,8 +414,11 @@ def test_render_pdf_renders_disclaimer_and_footers(
 
     fake = _FakeCanvas.last
     assert fake is not None
-    assert "Guide only for UNSW Sydney on 2026-05-28." in fake.drawn_strings
-    assert "Check handbook." in fake.drawn_strings
+    assert (
+        "Guide only for UNSW Sydney in 2026 T1 (2026 T1) on 2026-05-28."
+        in fake.drawn_strings
+    )
+    assert "Check handbook for 2026." in fake.drawn_strings
     assert any(
         "Information correct as at 2026-05-28" in text for text in fake.drawn_strings
     )

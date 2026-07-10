@@ -131,6 +131,8 @@ Supported header/footer tokens include:
 - `{program_code}` (canonical program identifier; sourced from `program_id` and mirrored by `{program_id}`)
 - `{program_id}` (canonical program identifier)
 - `{intake}`
+- `{intake_year}` and `{intake.year}`
+- `{intake_period}` and `{intake.period}`
 - `{program_name}`
 - `{majors}`
 - `{degree_code}` (compatibility alias of `{program_id}`)
