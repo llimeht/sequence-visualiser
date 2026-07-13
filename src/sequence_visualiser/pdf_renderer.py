@@ -24,6 +24,7 @@ from reportlab.pdfgen import canvas
 
 from .models import Course, RenderContext, YearLayout
 from .render_tokens import runtime_token_values
+from .text_markup import TextRun, parse_inline_bold_with_warnings
 from .timeline import CALENDAR_MODELS
 
 logger = logging.getLogger(__name__)
@@ -918,14 +919,45 @@ def _draw_footer(
         return
 
     footer_line_count = max(len(footer_left_lines), len(footer_right_lines))
-    c.setFont(cast(str, fonts["footer_regular"]), FOOTER_FONT_SIZE)
+    footer_fonts: dict[str, Any] = {
+        "body_regular": fonts.get("footer_regular", fonts["body_regular"]),
+        "body_bold": fonts.get(
+            "footer_bold",
+            fonts.get("footer_regular", fonts["body_regular"]),
+        ),
+    }
     baseline = margin + 2
     for i in range(footer_line_count):
         y = baseline + ((footer_line_count - 1 - i) * FOOTER_LINE_HEIGHT)
         if i < len(footer_left_lines):
-            c.drawString(margin, y, footer_left_lines[i])
+            left_parsed = parse_inline_bold_with_warnings(footer_left_lines[i])
+            for warning in left_parsed.warnings:
+                logger.warning("PDF long-form markup warning in pdf.footer_left: %s", warning)
+            _draw_runs_line(
+                c,
+                left_parsed.runs,
+                x=margin,
+                y=y,
+                fonts=footer_fonts,
+                font_size=FOOTER_FONT_SIZE,
+            )
         if i < len(footer_right_lines):
-            c.drawRightString(page_width - margin, y, footer_right_lines[i])
+            right_parsed = parse_inline_bold_with_warnings(footer_right_lines[i])
+            for warning in right_parsed.warnings:
+                logger.warning("PDF long-form markup warning in pdf.footer_right: %s", warning)
+            right_width = sum(
+                _run_width(run, fonts=footer_fonts, font_size=FOOTER_FONT_SIZE)
+                for run in right_parsed.runs
+            )
+            right_x = page_width - margin - right_width
+            _draw_runs_line(
+                c,
+                right_parsed.runs,
+                x=right_x,
+                y=y,
+                fonts=footer_fonts,
+                font_size=FOOTER_FONT_SIZE,
+            )
 
 
 def _footer_block_height(footer_left_lines: list[str], footer_right_lines: list[str]) -> float:
@@ -936,14 +968,23 @@ def _footer_block_height(footer_left_lines: list[str], footer_right_lines: list[
     return (footer_line_count * FOOTER_LINE_HEIGHT) + FOOTER_TOP_GAP
 
 
-def _wrapped_lines_preserving_blank_lines(
+def _run_width(run: TextRun, *, fonts: Mapping[str, Any], font_size: int) -> float:
+    """Return width of a text run in the appropriate body font."""
+    bold_font = cast(str, fonts.get("body_bold", fonts["body_regular"]))
+    regular_font = cast(str, fonts["body_regular"])
+    font_name = bold_font if run.bold else regular_font
+    return cast(float, pdfmetrics.stringWidth(run.text, font_name, font_size))
+
+
+def _wrap_runs_preserving_blank_lines(
     text: str,
     *,
-    font_name: str,
+    fonts: Mapping[str, Any],
     font_size: int,
     max_width: float,
-) -> list[str]:
-    """Wrap text while preserving explicit blank lines from newline-separated paragraphs."""
+    field_name: str,
+) -> list[list[TextRun]]:
+    """Wrap parsed runs while preserving explicit blank lines."""
     if not text:
         return []
 
@@ -952,13 +993,82 @@ def _wrapped_lines_preserving_blank_lines(
         getattr(import_module("reportlab.lib.utils"), "simpleSplit"),
     )
 
-    wrapped: list[str] = []
-    for raw_line in text.splitlines():
-        if not raw_line.strip():
-            wrapped.append("")
+    wrapped: list[list[TextRun]] = []
+    space_run = TextRun(" ", False)
+    space_width = _run_width(space_run, fonts=fonts, font_size=font_size)
+
+    for paragraph in text.splitlines():
+        if not paragraph.strip():
+            wrapped.append([])
             continue
-        wrapped.extend(simple_split(raw_line, font_name, font_size, max_width))
+
+        parsed = parse_inline_bold_with_warnings(paragraph)
+        for warning in parsed.warnings:
+            logger.warning("PDF long-form markup warning in %s: %s", field_name, warning)
+        parsed_runs = parsed.runs
+        if not any(run.bold for run in parsed_runs):
+            for line in simple_split(
+                paragraph,
+                cast(str, fonts["body_regular"]),
+                font_size,
+                max_width,
+            ):
+                wrapped.append([TextRun(line, False)])
+            continue
+
+        tokens: list[TextRun] = []
+        for source_run in parsed_runs:
+            words = source_run.text.split()
+            for word in words:
+                if word:
+                    tokens.append(TextRun(word, source_run.bold))
+
+        if not tokens:
+            wrapped.append([])
+            continue
+
+        current_line: list[TextRun] = []
+        current_width = 0.0
+        for token in tokens:
+            token_width = _run_width(token, fonts=fonts, font_size=font_size)
+            additional = token_width if not current_line else token_width + space_width
+            if current_line and (current_width + additional) > max_width:
+                wrapped.append(current_line)
+                current_line = [token]
+                current_width = token_width
+                continue
+            if current_line:
+                current_line.append(space_run)
+                current_width += space_width
+            current_line.append(token)
+            current_width += token_width
+
+        if current_line:
+            wrapped.append(current_line)
+
     return wrapped
+
+
+def _draw_runs_line(
+    c: canvas.Canvas,
+    runs: list[TextRun],
+    *,
+    x: float,
+    y: float,
+    fonts: Mapping[str, Any],
+    font_size: int,
+) -> None:
+    """Draw a single line composed of plain and bold text runs."""
+    cursor = x
+    bold_font = cast(str, fonts.get("body_bold", fonts["body_regular"]))
+    regular_font = cast(str, fonts["body_regular"])
+    for run in runs:
+        if not run.text:
+            continue
+        font_name = bold_font if run.bold else regular_font
+        c.setFont(font_name, font_size)
+        c.drawString(cursor, y, run.text)
+        cursor += pdfmetrics.stringWidth(run.text, font_name, font_size)
 
 
 def _draw_second_page_content(
@@ -1015,11 +1125,12 @@ def _draw_second_page_content(
         SECOND_PAGE_DEFAULT_DISCLAIMER_LINE_HEIGHT,
     )
 
-    disclaimer_lines = _wrapped_lines_preserving_blank_lines(
+    disclaimer_lines = _wrap_runs_preserving_blank_lines(
         bottom_disclaimer_text,
-        font_name=cast(str, fonts["body_regular"]),
+        fonts=fonts,
         font_size=disclaimer_font_size,
         max_width=content_width - (2 * SECOND_PAGE_BOX_PADDING),
+        field_name="pdf.second_page.bottom_disclaimer",
     )
     disclaimer_box_height = (
         (2 * SECOND_PAGE_BOX_PADDING)
@@ -1051,18 +1162,25 @@ def _draw_second_page_content(
             c.drawString(text_left, text_y - info_font_size, info_title)
             text_y -= info_title_height
 
-        info_lines = _wrapped_lines_preserving_blank_lines(
+        info_lines = _wrap_runs_preserving_blank_lines(
             info_text,
-            font_name=cast(str, fonts["body_regular"]),
+            fonts=fonts,
             font_size=info_font_size,
             max_width=text_width,
+            field_name="pdf.second_page.info_box_text",
         )
-        c.setFont(cast(str, fonts["body_regular"]), info_font_size)
         for line in info_lines:
             if text_y - info_font_size < (info_box_bottom + SECOND_PAGE_BOX_PADDING):
                 break
             if line:
-                c.drawString(text_left, text_y - info_font_size, line)
+                _draw_runs_line(
+                    c,
+                    line,
+                    x=text_left,
+                    y=text_y - info_font_size,
+                    fonts=fonts,
+                    font_size=info_font_size,
+                )
             text_y -= info_line_height
 
     if disclaimer_box_height > 0:
@@ -1076,12 +1194,18 @@ def _draw_second_page_content(
             stroke=1,
             fill=0,
         )
-        c.setFont(cast(str, fonts["body_regular"]), disclaimer_font_size)
         text_y = disclaimer_top - SECOND_PAGE_BOX_PADDING
         text_left = margin + SECOND_PAGE_BOX_PADDING
         for line in disclaimer_lines:
             if line:
-                c.drawString(text_left, text_y - disclaimer_font_size, line)
+                _draw_runs_line(
+                    c,
+                    line,
+                    x=text_left,
+                    y=text_y - disclaimer_font_size,
+                    fonts=fonts,
+                    font_size=disclaimer_font_size,
+                )
             text_y -= disclaimer_line_height
 
 
@@ -1168,11 +1292,12 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
     top_disclaimer = _render_pdf_template_text(
         pdf_tweaks.get("top_disclaimer", ""), template_env, template_context
     )
-    top_disclaimer_lines = _wrapped_lines_preserving_blank_lines(
+    top_disclaimer_lines = _wrap_runs_preserving_blank_lines(
         top_disclaimer,
-        font_name=cast(str, fonts["body_regular"]),
+        fonts=fonts,
         font_size=TOP_DISCLAIMER_FONT_SIZE,
         max_width=content_width,
+        field_name="pdf.top_disclaimer",
     )
 
     footer_left_template = pdf_tweaks.get(
@@ -1208,10 +1333,17 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
     header_bottom = page_height - header_height
     available_top = max(margin, header_bottom - header_bottom_spacing)
     if top_disclaimer_lines:
-        c.setFont(cast(str, fonts["body_regular"]), TOP_DISCLAIMER_FONT_SIZE)
         disclaimer_y = available_top - TOP_DISCLAIMER_FONT_SIZE
         for line in top_disclaimer_lines:
-            c.drawString(margin, disclaimer_y, line)
+            if line:
+                _draw_runs_line(
+                    c,
+                    line,
+                    x=margin,
+                    y=disclaimer_y,
+                    fonts=fonts,
+                    font_size=TOP_DISCLAIMER_FONT_SIZE,
+                )
             disclaimer_y -= TOP_DISCLAIMER_LINE_HEIGHT
         available_top -= (
             (len(top_disclaimer_lines) * TOP_DISCLAIMER_LINE_HEIGHT)
@@ -1334,19 +1466,27 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
             template_env,
             template_context,
         )
-        second_page_top_disclaimer_lines = _wrapped_lines_preserving_blank_lines(
+        second_page_top_disclaimer_lines = _wrap_runs_preserving_blank_lines(
             second_page_top_disclaimer,
-            font_name=cast(str, fonts["body_regular"]),
+            fonts=fonts,
             font_size=TOP_DISCLAIMER_FONT_SIZE,
             max_width=content_width,
+            field_name="pdf.second_page.top_disclaimer",
         )
 
         second_available_top = max(margin, header_bottom - header_bottom_spacing)
         if second_page_top_disclaimer_lines:
-            c.setFont(cast(str, fonts["body_regular"]), TOP_DISCLAIMER_FONT_SIZE)
             disclaimer_y = second_available_top - TOP_DISCLAIMER_FONT_SIZE
             for line in second_page_top_disclaimer_lines:
-                c.drawString(margin, disclaimer_y, line)
+                if line:
+                    _draw_runs_line(
+                        c,
+                        line,
+                        x=margin,
+                        y=disclaimer_y,
+                        fonts=fonts,
+                        font_size=TOP_DISCLAIMER_FONT_SIZE,
+                    )
                 disclaimer_y -= TOP_DISCLAIMER_LINE_HEIGHT
             second_available_top -= (
                 (len(second_page_top_disclaimer_lines) * TOP_DISCLAIMER_LINE_HEIGHT)

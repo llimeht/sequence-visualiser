@@ -23,8 +23,8 @@
       {% if rule.validity_from or rule.validity_to %}
       <div class="meta">Rule validity: {{ rule.validity_from }} - {{ rule.validity_to }}</div>
       {% endif %}
-      {% if top_disclaimer %}
-      <div class="meta disclaimer">{{ top_disclaimer }}</div>
+      {% if top_disclaimer_html %}
+      <div class="meta disclaimer">{{ top_disclaimer_html }}</div>
       {% endif %}
     </section>
 
@@ -63,9 +63,9 @@
     {% endfor %}
   </main>
   <footer class="footer-block">
-    {% if footer_lines %}
+    {% if footer_lines_html %}
       <div class="footer-single">
-        {% for line in footer_lines %}
+        {% for line in footer_lines_html %}
           <div>{{ line }}</div>
         {% endfor %}
       </div>

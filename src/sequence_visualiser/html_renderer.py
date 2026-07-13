@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import cast
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from markupsafe import Markup
 
 from .models import RenderContext
 from .render_tokens import expand_runtime_tokens, runtime_token_values
+from .text_markup import parse_inline_bold_with_warnings
+
+logger = logging.getLogger(__name__)
 
 
 def _build_html_metadata(context: RenderContext, university_name: str) -> dict[str, str]:
@@ -37,6 +42,22 @@ def _build_html_metadata(context: RenderContext, university_name: str) -> dict[s
         ),
         "creator": f"Copyright © {copyright_year} {university_name} / sequence-visualiser",
     }
+
+
+def _render_long_form_html(text: str, *, field_name: str) -> Markup:
+    """Render safe long-form HTML text with inline <b>...</b> support."""
+    parsed = parse_inline_bold_with_warnings(text)
+    for warning in parsed.warnings:
+        logger.warning("HTML long-form markup warning in %s: %s", field_name, warning)
+
+    output: list[str] = []
+    for run in parsed.runs:
+        escaped = Markup.escape(run.text)
+        if run.bold:
+            output.append(f"<strong>{escaped}</strong>")
+        else:
+            output.append(str(escaped))
+    return Markup("".join(output))
 
 
 def render_html(context: RenderContext, templates_dir: Path, output_path: Path) -> None:
@@ -119,6 +140,15 @@ def render_html(context: RenderContext, templates_dir: Path, output_path: Path) 
         tokens=tokens,
         top_disclaimer=top_disclaimer,
         footer_lines=footer.splitlines() if footer else [],
+        top_disclaimer_html=_render_long_form_html(
+            top_disclaimer, field_name="html.top_disclaimer"
+        ),
+        footer_lines_html=[
+            _render_long_form_html(line, field_name="html.footer")
+            for line in footer.splitlines()
+        ]
+        if footer
+        else [],
         html_metadata=html_metadata,
         css_variables=css_variables,
     )

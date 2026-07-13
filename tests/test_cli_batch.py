@@ -177,7 +177,7 @@ def test_html_disclaimer_uses_datestamp_tokens(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (templates_dir / "sequence.html.j2").write_text(
-        """<!doctype html><html><body><section class=\"intro\"><div>{{ top_disclaimer }}</div></section><footer>{% for line in footer_lines %}<div>{{ line }}</div>{% endfor %}</footer></body></html>""",
+        """<!doctype html><html><body><section class=\"intro\"><div>{{ top_disclaimer_html }}</div></section><footer>{% for line in footer_lines_html %}<div>{{ line }}</div>{% endfor %}</footer></body></html>""",
         encoding="utf-8",
     )
 
@@ -216,6 +216,113 @@ def test_html_disclaimer_uses_datestamp_tokens(tmp_path: Path) -> None:
     html = (output_dir / "CEICAH3707_2026_T1.html").read_text(encoding="utf-8")
     assert "Guide for Test Uni as at 2026-05-28 (2026) in 2026 T1" in html
     assert "Issued for 3707 Flex in 2026" in html
+
+
+def test_html_long_form_bold_markup_renders_strong_only_in_long_form(tmp_path: Path) -> None:
+    templates_dir = tmp_path / "templates"
+    (templates_dir / "config").mkdir(parents=True)
+    local_overrides = tmp_path / "template-overrides" / "config"
+    local_overrides.mkdir(parents=True)
+    (templates_dir / "config" / "defaults.json").write_text(
+        '{"html":{"top_disclaimer":"Guide <b>Important</b> notice","footer":"Contact <b>The Nucleus</b> today"}}',
+        encoding="utf-8",
+    )
+    (templates_dir / "sequence.html.j2").write_text(
+        """<!doctype html><html><body><section class=\"intro\"><div>{{ top_disclaimer_html }}</div></section><main>{% for year in years %}{% for period in year.periods %}{% for course in period.courses %}<div class=\"course\">{{ course.title }}</div>{% endfor %}{% endfor %}{% endfor %}</main><footer>{% for line in footer_lines_html %}<div>{{ line }}</div>{% endfor %}</footer></body></html>""",
+        encoding="utf-8",
+    )
+
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan(plan, "Term 1")
+
+    output_dir = tmp_path / "out"
+    rc = main(
+        [
+            str(plan),
+            "--output-dir",
+            str(output_dir),
+            "--rules-dir",
+            str(rules_dir),
+            "--templates-dir",
+            str(templates_dir),
+            "--config-dir",
+            str(templates_dir / "config"),
+            "--template-overrides-dir",
+            str(local_overrides),
+            "--formats",
+            "html",
+        ]
+    )
+
+    assert rc == 0
+    html = (output_dir / "CEICAH3707_2026_T1.html").read_text(encoding="utf-8")
+    assert "Guide <strong>Important</strong> notice" in html
+    assert "Contact <strong>The Nucleus</strong> today" in html
+    assert "<strong>Math</strong>" not in html
+
+
+def test_html_long_form_unclosed_bold_tag_logs_warning(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    templates_dir = tmp_path / "templates"
+    (templates_dir / "config").mkdir(parents=True)
+    local_overrides = tmp_path / "template-overrides" / "config"
+    local_overrides.mkdir(parents=True)
+    (templates_dir / "config" / "defaults.json").write_text(
+        '{"html":{"top_disclaimer":"Guide <b>Important notice"}}',
+        encoding="utf-8",
+    )
+    (templates_dir / "sequence.html.j2").write_text(
+        """<!doctype html><html><body><section class=\"intro\"><div>{{ top_disclaimer_html }}</div></section></body></html>""",
+        encoding="utf-8",
+    )
+
+    warnings: list[str] = []
+
+    def _capture_warning(msg: str, *args: object, **kwargs: object) -> None:
+        _ = kwargs
+        warnings.append(msg % args)
+
+    monkeypatch.setattr("sequence_visualiser.html_renderer.logger.warning", _capture_warning)
+
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan(plan, "Term 1")
+
+    output_dir = tmp_path / "out"
+    rc = main(
+        [
+            str(plan),
+            "--output-dir",
+            str(output_dir),
+            "--rules-dir",
+            str(rules_dir),
+            "--templates-dir",
+            str(templates_dir),
+            "--config-dir",
+            str(templates_dir / "config"),
+            "--template-overrides-dir",
+            str(local_overrides),
+            "--formats",
+            "html",
+        ]
+    )
+
+    assert rc == 0
+    assert any("Unclosed <b> tag found" in warning for warning in warnings)
 
 
 def test_html_disclaimer_fails_for_unexpanded_token(tmp_path: Path) -> None:
