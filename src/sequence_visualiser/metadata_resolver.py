@@ -215,7 +215,19 @@ def _identity_from_metadata_map(
 
 
 def _resolve_plan_embedded_metadata(plan: Plan) -> tuple[ProgramIdentity, RuleMetadata]:
-    """Resolve metadata from plan.program_metadata block."""
+    """Resolve metadata from plan.program_metadata block.
+
+    Expects the nested format used in plan files::
+
+        "program_metadata": {
+            "plan_code": "CEICKS8338(48RPL)",
+            "plan_description": "standard enrolment plan with 48 UoC of RPL",
+            "program": {"id": "8338", "name": "Master of Engineering Science"},
+            "specialisation": [
+                {"id": "CEICKS", "name": "Chemical Engineering"}
+            ]
+        }
+    """
     if not plan.program_metadata:
         raise RuleResolutionError(
             f"Plan {plan.source_path} missing program_metadata for metadata-source=plan"
@@ -223,26 +235,41 @@ def _resolve_plan_embedded_metadata(plan: Plan) -> tuple[ProgramIdentity, RuleMe
     metadata = cast(Mapping[str, object], plan.program_metadata)
 
     plan_code = str(metadata.get("plan_code", "")).strip()
-    program_id = _program_id_from_metadata(metadata)
-    specialisation_codes = _parse_listish(
-        metadata.get("specialisation_codes", []), "specialisation_codes"
-    )
-    specialisation_names = _parse_listish(
-        metadata.get("specialisation_names", []), "specialisation_names"
-    )
-    program_name = str(metadata.get("program_name", "")).strip()
+    plan_description = str(metadata.get("plan_description", "")).strip()
+
+    program_obj = metadata.get("program")
+    program_id = ""
+    program_name = ""
+    if isinstance(program_obj, Mapping):
+        typed_program = cast(Mapping[str, object], program_obj)
+        program_id = str(typed_program.get("id", "")).strip()
+        program_name = str(typed_program.get("name", "")).strip()
+
+    specialisation_codes: list[str] = []
+    specialisation_names: list[str] = []
+    specialisation_raw = metadata.get("specialisation")
+    if isinstance(specialisation_raw, list):
+        for item in cast(list[object], specialisation_raw):
+            if isinstance(item, Mapping):
+                item_map = cast(Mapping[str, object], item)
+                code = str(item_map.get("id", "")).strip()
+                name = str(item_map.get("name", "")).strip()
+                if code:
+                    specialisation_codes.append(code)
+                if name:
+                    specialisation_names.append(name)
 
     missing: list[str] = []
     if not plan_code:
         missing.append("program_metadata.plan_code")
     if not program_id:
-        missing.append("program_metadata.program_id")
-    if not specialisation_codes:
-        missing.append("program_metadata.specialisation_codes")
+        missing.append("program_metadata.program.id")
     if not program_name:
-        missing.append("program_metadata.program_name")
+        missing.append("program_metadata.program.name")
+    if not specialisation_codes:
+        missing.append("program_metadata.specialisation[].id")
     if not specialisation_names:
-        missing.append("program_metadata.specialisation_names")
+        missing.append("program_metadata.specialisation[].name")
     if missing:
         raise RuleResolutionError(
             f"Missing embedded metadata keys in {plan.source_path}: {', '.join(missing)}"
@@ -260,7 +287,7 @@ def _resolve_plan_embedded_metadata(plan: Plan) -> tuple[ProgramIdentity, RuleMe
         validity_from="",
         validity_to="",
         program_id=program_id,
-        plan_description=plan.plan_description,
+        plan_description=plan_description,
     )
     return identity, metadata_payload
 
