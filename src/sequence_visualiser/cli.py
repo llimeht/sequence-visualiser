@@ -74,7 +74,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--metadata-source",
         type=str,
-        default=MetadataSource.RULES.value,
+        default=MetadataSource.PLAN.value,
         choices=[source.value for source in MetadataSource],
         help="Metadata source mode",
     )

@@ -160,13 +160,16 @@ def test_resolve_metadata_from_plan_embedded_block(tmp_path: Path) -> None:
           "career": "Undergraduate",
           "uoc": 192,
           "intake": "2026 T1",
-          "plan_description": "Accelerated",
           "program_metadata": {
             "plan_code": "CEICAH3707",
-            "program_id": "3707",
-            "program_name": "Bachelor of Engineering (Honours)",
-            "specialisation_codes": ["CEICAH"],
-            "specialisation_names": ["Chemical Engineering"]
+            "plan_description": "Standard sequence",
+            "program": {
+              "id": "3707",
+              "name": "Bachelor of Engineering (Honours)"
+            },
+            "specialisation": [
+              {"id": "CEICAH", "name": "Chemical Engineering"}
+            ]
           },
           "courses": []
         }
@@ -186,7 +189,7 @@ def test_resolve_metadata_from_plan_embedded_block(tmp_path: Path) -> None:
     assert identity.degree_code == "3707"
     assert metadata.program_id == "3707"
     assert metadata.program_name == "Bachelor of Engineering (Honours)"
-    assert metadata.plan_description == "Accelerated"
+    assert metadata.plan_description == "Standard sequence"
     assert metadata.rule_file == plan_path
 
 

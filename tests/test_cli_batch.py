@@ -67,6 +67,8 @@ def test_cli_continues_after_plan_failure(tmp_path: Path) -> None:
             str(templates_dir),
             "--config-dir",
             str(templates_dir / "config"),
+            "--metadata-source",
+            "rules",
             "--formats",
             "html",
         ]
@@ -105,6 +107,8 @@ def test_html_template_renders_expanded_sections(tmp_path: Path) -> None:
             str(templates_dir),
             "--config-dir",
             str(templates_dir / "config"),
+            "--metadata-source",
+            "rules",
             "--formats",
             "html",
         ]
@@ -156,6 +160,8 @@ def test_pdf_renders_with_custom_colour_config(tmp_path: Path) -> None:
             str(templates_dir),
             "--config-dir",
             str(templates_dir / "config"),
+            "--metadata-source",
+            "rules",
             "--formats",
             "pdf",
         ]
@@ -205,6 +211,8 @@ def test_html_disclaimer_uses_datestamp_tokens(tmp_path: Path) -> None:
             str(templates_dir / "config"),
             "--template-overrides-dir",
             str(local_overrides),
+            "--metadata-source",
+            "rules",
             "--formats",
             "html",
             "--datestamp",
@@ -256,6 +264,8 @@ def test_html_long_form_bold_markup_renders_strong_only_in_long_form(tmp_path: P
             str(templates_dir / "config"),
             "--template-overrides-dir",
             str(local_overrides),
+            "--metadata-source",
+            "rules",
             "--formats",
             "html",
         ]
@@ -316,6 +326,8 @@ def test_html_long_form_unclosed_bold_tag_logs_warning(
             str(templates_dir / "config"),
             "--template-overrides-dir",
             str(local_overrides),
+            "--metadata-source",
+            "rules",
             "--formats",
             "html",
         ]
@@ -499,6 +511,8 @@ def test_cli_defaults_resolve_from_project_root_not_cwd(
             str(plan),
             "--output-dir",
             str(output_dir),
+            "--metadata-source",
+            "rules",
             "--formats",
             "html",
         ]
@@ -546,6 +560,8 @@ def test_default_overrides_remain_cwd_relative(
             str(plan),
             "--output-dir",
             str(output_dir),
+            "--metadata-source",
+            "rules",
             "--formats",
             "html",
         ]

@@ -973,7 +973,7 @@ def _run_width(run: TextRun, *, fonts: Mapping[str, Any], font_size: int) -> flo
     bold_font = cast(str, fonts.get("body_bold", fonts["body_regular"]))
     regular_font = cast(str, fonts["body_regular"])
     font_name = bold_font if run.bold else regular_font
-    return cast(float, pdfmetrics.stringWidth(run.text, font_name, font_size))
+    return cast(float, pdfmetrics.stringWidth(run.text, font_name, font_size)) # pyright: ignore[reportUnnecessaryCast]
 
 
 def _wrap_runs_preserving_blank_lines(
