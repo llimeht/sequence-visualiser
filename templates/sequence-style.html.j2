@@ -23,6 +23,8 @@
     --period-semester-2: {{ css_variables.get("period-semester-2", "#e2e2e2") }};
     --period-summer-term: {{ css_variables.get("period-summer-term", "#fff5d6") }};
     --period-winter-term: {{ css_variables.get("period-winter-term", "#dff1ff") }};
+    --link-colour: {{ css_variables.get("link-colour", css_variables.get("link-color", "var(--accent)")) }};
+    --link-underline: {{ css_variables.get("link-underline", "underline") }};
   }
   body {
     margin: 0;
@@ -110,6 +112,16 @@
   }
   .disclaimer {
     margin-top: 1em;
+  }
+  .disclaimer a,
+  .footer-single a {
+    color: var(--link-colour);
+    text-decoration-line: var(--link-underline);
+    text-underline-offset: 2px;
+  }
+  .disclaimer a:hover,
+  .footer-single a:hover {
+    color: var(--link-colour);
   }
   .footer-block {
     margin-top: 48px;

@@ -97,7 +97,7 @@ for rendering and config-layer selection. Metadata is resolved using exactly one
     - Uses a CSV/TSV mapping file (`--metadata-map`) keyed by plan filename.
     - No rule file lookup is performed.
 
-### Embedded plan metadata contract (`--metadata-source plan`)
+### Embedded plan metadata (`--metadata-source plan`)
 
 Add a `program_metadata` object to the plan JSON:
 
@@ -120,7 +120,7 @@ Example:
 }
 ```
 
-### Spreadsheet metadata contract (`--metadata-source spreadsheet`)
+### Spreadsheet metadata (`--metadata-source spreadsheet`)
 
 Required columns (in recommended order):
 
@@ -146,6 +146,14 @@ Validation behavior:
 - Template overview and what to edit: `templates/README.md`
 - Config layering details: `templates/config/README.md`
 - Shared template assets: `templates/assets/README.md`
+
+## Supported markup and formatting
+
+Limited support is provided for a subset of HTML in the notes fields within the plans and within the text fields of the templates. The following are supported:
+
+- `<b>...</b>` for bold text
+- `<i>...</i>` for italic text
+- `<a href="...">...</a>` for hyperlinks
 
 ### Repository layout
 

@@ -5,15 +5,31 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import cast
+from urllib.parse import urlparse
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
 from .models import RenderContext
 from .render_tokens import expand_runtime_tokens, runtime_token_values
-from .text_markup import parse_inline_bold_with_warnings
+from .text_markup import parse_inline_markup_with_warnings
 
 logger = logging.getLogger(__name__)
+_ALLOWED_HTML_LINK_SCHEMES = frozenset({"http", "https", "mailto"})
+
+
+def _safe_href_or_none(href: str | None) -> str | None:
+    if not href:
+        return None
+    parsed = urlparse(href.strip())
+    scheme = parsed.scheme.lower()
+    if scheme not in _ALLOWED_HTML_LINK_SCHEMES:
+        return None
+    if scheme in {"http", "https"} and not parsed.netloc:
+        return None
+    if scheme == "mailto" and not parsed.path:
+        return None
+    return href.strip()
 
 
 def _build_html_metadata(context: RenderContext, university_name: str) -> dict[str, str]:
@@ -45,18 +61,29 @@ def _build_html_metadata(context: RenderContext, university_name: str) -> dict[s
 
 
 def _render_long_form_html(text: str, *, field_name: str) -> Markup:
-    """Render safe long-form HTML text with inline <b>...</b> support."""
-    parsed = parse_inline_bold_with_warnings(text)
+    """Render safe long-form HTML text with limited inline markup support."""
+    parsed = parse_inline_markup_with_warnings(text)
     for warning in parsed.warnings:
         logger.warning("HTML long-form markup warning in %s: %s", field_name, warning)
 
     output: list[str] = []
     for run in parsed.runs:
-        escaped = Markup.escape(run.text)
+        escaped_text = str(Markup.escape(run.text))
+        safe_href = _safe_href_or_none(run.href)
+        if run.href and safe_href is None:
+            logger.warning(
+                "HTML long-form markup warning in %s: disallowed href omitted", field_name
+            )
+
+        content = escaped_text
+        if safe_href:
+            escaped_href = str(Markup.escape(safe_href))
+            content = f'<a href="{escaped_href}">{content}</a>'
+        if run.italic:
+            content = f"<em>{content}</em>"
         if run.bold:
-            output.append(f"<strong>{escaped}</strong>")
-        else:
-            output.append(str(escaped))
+            content = f"<strong>{content}</strong>"
+        output.append(content)
     return Markup("".join(output))
 
 
@@ -118,6 +145,21 @@ def render_html(context: RenderContext, templates_dir: Path, output_path: Path) 
                     value = semesters_mapping.get(key)
                     if isinstance(value, str):
                         css_variables[f"period-{key.lower().replace(' ', '-')}"] = value
+
+    link_style = html_mapping.get("link_style")
+    if isinstance(link_style, dict):
+        link_style_mapping = cast(dict[str, object], link_style)
+        configured_colour = link_style_mapping.get("colour")
+        if configured_colour is None:
+            configured_colour = link_style_mapping.get("color")
+        if isinstance(configured_colour, str) and configured_colour.strip():
+            css_variables["link-colour"] = configured_colour.strip()
+
+        configured_underline = link_style_mapping.get("underline")
+        if isinstance(configured_underline, bool):
+            css_variables["link-underline"] = (
+                "underline" if configured_underline else "none"
+            )
 
     custom_css_variables = html_mapping.get("css_variables")
     if isinstance(custom_css_variables, dict):

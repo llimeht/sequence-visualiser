@@ -226,13 +226,13 @@ def test_html_disclaimer_uses_datestamp_tokens(tmp_path: Path) -> None:
     assert "Issued for 3707 Flex in 2026" in html
 
 
-def test_html_long_form_bold_markup_renders_strong_only_in_long_form(tmp_path: Path) -> None:
+def test_html_long_form_markup_renders_only_in_long_form(tmp_path: Path) -> None:
     templates_dir = tmp_path / "templates"
     (templates_dir / "config").mkdir(parents=True)
     local_overrides = tmp_path / "template-overrides" / "config"
     local_overrides.mkdir(parents=True)
     (templates_dir / "config" / "defaults.json").write_text(
-        '{"html":{"top_disclaimer":"Guide <b>Important</b> notice","footer":"Contact <b>The Nucleus</b> today"}}',
+        '{"html":{"top_disclaimer":"Guide <b><i>Important</i></b> notice","footer":"Contact <a href=\\"https://example.edu\\">The Nucleus</a> today"}}',
         encoding="utf-8",
     )
     (templates_dir / "sequence.html.j2").write_text(
@@ -273,8 +273,10 @@ def test_html_long_form_bold_markup_renders_strong_only_in_long_form(tmp_path: P
 
     assert rc == 0
     html = (output_dir / "CEICAH3707_2026_T1.html").read_text(encoding="utf-8")
-    assert "Guide <strong>Important</strong> notice" in html
-    assert "Contact <strong>The Nucleus</strong> today" in html
+    assert "Guide <strong><em>Important</em></strong> notice" in html
+    assert (
+        'Contact <a href="https://example.edu">The Nucleus</a> today' in html
+    )
     assert "<strong>Math</strong>" not in html
 
 

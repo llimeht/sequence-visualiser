@@ -24,7 +24,7 @@ from reportlab.pdfgen import canvas
 
 from .models import Course, RenderContext, YearLayout
 from .render_tokens import runtime_token_values
-from .text_markup import TextRun, parse_inline_bold_with_warnings
+from .text_markup import TextRun, parse_inline_markup_with_warnings
 from .timeline import CALENDAR_MODELS
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,50 @@ class _CanvasDoForm(Protocol):
     def __call__(self, name: object) -> None: ...
 
 
+class _CanvasLinkURL(Protocol):
+    def __call__(
+        self,
+        url: str,
+        rect: tuple[float, float, float, float],
+        relative: int = 0,
+    ) -> None: ...
+
+
+class _CanvasLine(Protocol):
+    def __call__(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+    ) -> None: ...
+
+
 _get_font = cast(_GetFont, pdfmetrics.getFont)
+
+
+def _canvas_link_url(
+    c: canvas.Canvas,
+    *,
+    url: str,
+    rect: tuple[float, float, float, float],
+) -> None:
+    """Type-safe wrapper around ReportLab Canvas.linkURL for static analysis."""
+    link_url = cast(_CanvasLinkURL, cast(Any, c).linkURL)
+    link_url(url, rect, relative=0)
+
+
+def _canvas_line(
+    c: canvas.Canvas,
+    *,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+) -> None:
+    """Type-safe wrapper around ReportLab Canvas.line for static analysis."""
+    line_fn = cast(_CanvasLine, cast(Any, c).line)
+    line_fn(x1, y1, x2, y2)
 
 CODE_FONT = "Helvetica-Bold"
 TEXT_FONT = "Helvetica"
@@ -913,6 +956,7 @@ def _draw_footer(
     footer_left_lines: list[str],
     footer_right_lines: list[str],
     fonts: Mapping[str, Any],
+    link_style: Mapping[str, Any],
 ) -> None:
     """Draw footer lines on the current page."""
     if not footer_left_lines and not footer_right_lines:
@@ -925,12 +969,20 @@ def _draw_footer(
             "footer_bold",
             fonts.get("footer_regular", fonts["body_regular"]),
         ),
+        "body_italic": fonts.get(
+            "footer_italic",
+            fonts.get("footer_regular", fonts["body_regular"]),
+        ),
+        "body_bold_italic": fonts.get(
+            "footer_bold_italic",
+            fonts.get("footer_bold", fonts.get("footer_regular", fonts["body_regular"])),
+        ),
     }
     baseline = margin + 2
     for i in range(footer_line_count):
         y = baseline + ((footer_line_count - 1 - i) * FOOTER_LINE_HEIGHT)
         if i < len(footer_left_lines):
-            left_parsed = parse_inline_bold_with_warnings(footer_left_lines[i])
+            left_parsed = parse_inline_markup_with_warnings(footer_left_lines[i])
             for warning in left_parsed.warnings:
                 logger.warning("PDF long-form markup warning in pdf.footer_left: %s", warning)
             _draw_runs_line(
@@ -940,9 +992,10 @@ def _draw_footer(
                 y=y,
                 fonts=footer_fonts,
                 font_size=FOOTER_FONT_SIZE,
+                link_style=link_style,
             )
         if i < len(footer_right_lines):
-            right_parsed = parse_inline_bold_with_warnings(footer_right_lines[i])
+            right_parsed = parse_inline_markup_with_warnings(footer_right_lines[i])
             for warning in right_parsed.warnings:
                 logger.warning("PDF long-form markup warning in pdf.footer_right: %s", warning)
             right_width = sum(
@@ -957,6 +1010,7 @@ def _draw_footer(
                 y=y,
                 fonts=footer_fonts,
                 font_size=FOOTER_FONT_SIZE,
+                link_style=link_style,
             )
 
 
@@ -970,9 +1024,18 @@ def _footer_block_height(footer_left_lines: list[str], footer_right_lines: list[
 
 def _run_width(run: TextRun, *, fonts: Mapping[str, Any], font_size: int) -> float:
     """Return width of a text run in the appropriate body font."""
-    bold_font = cast(str, fonts.get("body_bold", fonts["body_regular"]))
     regular_font = cast(str, fonts["body_regular"])
-    font_name = bold_font if run.bold else regular_font
+    bold_font = cast(str, fonts.get("body_bold", regular_font))
+    italic_font = cast(str, fonts.get("body_italic", regular_font))
+    bold_italic_font = cast(str, fonts.get("body_bold_italic", bold_font))
+    if run.bold and run.italic:
+        font_name = bold_italic_font
+    elif run.bold:
+        font_name = bold_font
+    elif run.italic:
+        font_name = italic_font
+    else:
+        font_name = regular_font
     return cast(float, pdfmetrics.stringWidth(run.text, font_name, font_size)) # pyright: ignore[reportUnnecessaryCast]
 
 
@@ -994,7 +1057,7 @@ def _wrap_runs_preserving_blank_lines(
     )
 
     wrapped: list[list[TextRun]] = []
-    space_run = TextRun(" ", False)
+    space_run = TextRun(" ")
     space_width = _run_width(space_run, fonts=fonts, font_size=font_size)
 
     for paragraph in text.splitlines():
@@ -1002,18 +1065,18 @@ def _wrap_runs_preserving_blank_lines(
             wrapped.append([])
             continue
 
-        parsed = parse_inline_bold_with_warnings(paragraph)
+        parsed = parse_inline_markup_with_warnings(paragraph)
         for warning in parsed.warnings:
             logger.warning("PDF long-form markup warning in %s: %s", field_name, warning)
         parsed_runs = parsed.runs
-        if not any(run.bold for run in parsed_runs):
+        if not any(run.bold or run.italic or run.href for run in parsed_runs):
             for line in simple_split(
                 paragraph,
                 cast(str, fonts["body_regular"]),
                 font_size,
                 max_width,
             ):
-                wrapped.append([TextRun(line, False)])
+                wrapped.append([TextRun(line)])
             continue
 
         tokens: list[TextRun] = []
@@ -1021,7 +1084,14 @@ def _wrap_runs_preserving_blank_lines(
             words = source_run.text.split()
             for word in words:
                 if word:
-                    tokens.append(TextRun(word, source_run.bold))
+                    tokens.append(
+                        TextRun(
+                            word,
+                            bold=source_run.bold,
+                            italic=source_run.italic,
+                            href=source_run.href,
+                        )
+                    )
 
         if not tokens:
             wrapped.append([])
@@ -1038,7 +1108,17 @@ def _wrap_runs_preserving_blank_lines(
                 current_width = token_width
                 continue
             if current_line:
-                current_line.append(space_run)
+                previous_token = current_line[-1]
+                current_line.append(
+                    TextRun(
+                        " ",
+                        bold=previous_token.bold and token.bold,
+                        italic=previous_token.italic and token.italic,
+                        href=previous_token.href
+                        if previous_token.href == token.href
+                        else None,
+                    )
+                )
                 current_width += space_width
             current_line.append(token)
             current_width += token_width
@@ -1057,18 +1137,67 @@ def _draw_runs_line(
     y: float,
     fonts: Mapping[str, Any],
     font_size: int,
+    link_style: Mapping[str, Any] | None = None,
 ) -> None:
-    """Draw a single line composed of plain and bold text runs."""
+    """Draw a single line composed of styled text runs and optional links."""
     cursor = x
-    bold_font = cast(str, fonts.get("body_bold", fonts["body_regular"]))
+    style = link_style or {}
+    link_underline = bool(style.get("underline", False))
+    link_colour = style.get("colour")
     regular_font = cast(str, fonts["body_regular"])
+    bold_font = cast(str, fonts.get("body_bold", regular_font))
+    italic_font = cast(str, fonts.get("body_italic", regular_font))
+    bold_italic_font = cast(str, fonts.get("body_bold_italic", bold_font))
     for run in runs:
         if not run.text:
             continue
-        font_name = bold_font if run.bold else regular_font
+        if run.bold and run.italic:
+            font_name = bold_italic_font
+        elif run.bold:
+            font_name = bold_font
+        elif run.italic:
+            font_name = italic_font
+        else:
+            font_name = regular_font
         c.setFont(font_name, font_size)
+        if run.href and link_colour is not None:
+            c.setFillColor(link_colour)
         c.drawString(cursor, y, run.text)
-        cursor += pdfmetrics.stringWidth(run.text, font_name, font_size)
+        width = pdfmetrics.stringWidth(run.text, font_name, font_size)
+        if run.href:
+            _canvas_link_url(
+                c,
+                url=run.href,
+                rect=(cursor, y - 1, cursor + width, y + font_size),
+            )
+            if link_underline:
+                _canvas_line(
+                    c,
+                    x1=cursor,
+                    y1=y - 1,
+                    x2=cursor + width,
+                    y2=y - 1,
+                )
+            if link_colour is not None:
+                c.setFillColor(colors.black)
+        cursor += width
+
+
+def _pdf_link_style(pdf_tweaks: Mapping[str, Any]) -> dict[str, Any]:
+    """Resolve link styling options for PDF long-form links."""
+    link_style = _colour_mapping(pdf_tweaks, "link_style")
+    configured_colour: object | None = link_style.get("colour")
+    if configured_colour is None:
+        configured_colour = link_style.get("color")
+
+    resolved_colour: object | None = None
+    if configured_colour is not None:
+        resolved_colour = _to_color(configured_colour, colors.black)
+
+    return {
+        "underline": _bool_config(link_style.get("underline")),
+        "colour": resolved_colour,
+    }
 
 
 def _draw_second_page_content(
@@ -1079,6 +1208,7 @@ def _draw_second_page_content(
     available_top: float,
     available_bottom: float,
     fonts: Mapping[str, Any],
+    link_style: Mapping[str, Any],
     second_page: Mapping[str, Any],
     template_env: Environment,
     template_context: Mapping[str, Any],
@@ -1180,6 +1310,7 @@ def _draw_second_page_content(
                     y=text_y - info_font_size,
                     fonts=fonts,
                     font_size=info_font_size,
+                    link_style=link_style,
                 )
             text_y -= info_line_height
 
@@ -1205,6 +1336,7 @@ def _draw_second_page_content(
                     y=text_y - disclaimer_font_size,
                     fonts=fonts,
                     font_size=disclaimer_font_size,
+                    link_style=link_style,
                 )
             text_y -= disclaimer_line_height
 
@@ -1225,6 +1357,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
 
     branding = _colour_mapping(context.tweaks, "branding")
     pdf_tweaks = _colour_mapping(context.tweaks, "pdf")
+    link_style = _pdf_link_style(pdf_tweaks)
     colours_tweaks = _colour_mapping(pdf_tweaks, "colours")
     fonts = _font_roles(pdf_tweaks, templates_dir)
     university_name = str(branding.get("university_name", ""))
@@ -1343,6 +1476,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
                     y=disclaimer_y,
                     fonts=fonts,
                     font_size=TOP_DISCLAIMER_FONT_SIZE,
+                    link_style=link_style,
                 )
             disclaimer_y -= TOP_DISCLAIMER_LINE_HEIGHT
         available_top -= (
@@ -1436,6 +1570,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
         footer_left_lines=footer_left_lines,
         footer_right_lines=footer_right_lines,
         fonts=fonts,
+        link_style=link_style,
     )
 
     if _bool_config(second_page.get("enabled", False)):
@@ -1486,6 +1621,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
                         y=disclaimer_y,
                         fonts=fonts,
                         font_size=TOP_DISCLAIMER_FONT_SIZE,
+                        link_style=link_style,
                     )
                 disclaimer_y -= TOP_DISCLAIMER_LINE_HEIGHT
             second_available_top -= (
@@ -1520,6 +1656,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
             available_top=second_available_top,
             available_bottom=second_available_bottom,
             fonts=fonts,
+            link_style=link_style,
             second_page=second_page,
             template_env=template_env,
             template_context=template_context,
@@ -1532,6 +1669,7 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
             footer_left_lines=second_footer_left_lines,
             footer_right_lines=second_footer_right_lines,
             fonts=fonts,
+            link_style=link_style,
         )
 
     c.showPage()

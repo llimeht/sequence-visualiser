@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from _pytest.monkeypatch import MonkeyPatch
+from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.pdfbase.ttfonts import TTFError
 
@@ -88,6 +89,8 @@ class _FakeCanvas:
         self.drawn_text: list[tuple[float, float, str]] = []
         self.drawn_right_text: list[tuple[float, float, str]] = []
         self.set_font_calls: list[tuple[str, float]] = []
+        self.link_url_calls: list[tuple[str, tuple[float, float, float, float], int]] = []
+        self.line_calls: list[tuple[float, float, float, float]] = []
         self.drawn_images: list[str] = []
         self.form_draw_calls = 0
         self.show_page_calls = 0
@@ -145,8 +148,19 @@ class _FakeCanvas:
         self.drawn_strings.append(text)
         self.drawn_right_text.append((_x, _y, text))
 
+    def linkURL(  # noqa: N802
+        self,
+        url: str,
+        rect: tuple[float, float, float, float],
+        relative: int = 0,
+    ) -> None:
+        self.link_url_calls.append((url, rect, relative))
+
     def setStrokeColor(self, _value: object) -> None:  # noqa: N802
         return
+
+    def line(self, x1: float, y1: float, x2: float, y2: float) -> None:
+        self.line_calls.append((x1, y1, x2, y2))
 
     def setLineWidth(self, _value: float) -> None:  # noqa: N802
         return
@@ -428,7 +442,7 @@ def test_render_pdf_renders_disclaimer_and_footers(
     assert fake.creator.startswith("Copyright © 2026 UNSW Sydney / sequence-visualiser")
 
 
-def test_render_pdf_long_form_bold_markup_uses_bold_fonts_only_for_long_form(
+def test_render_pdf_long_form_markup_uses_styles_only_for_long_form(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     plan_path = tmp_path / "CEICAH3707_2026_T1.json"
@@ -462,8 +476,8 @@ def test_render_pdf_long_form_bold_markup_uses_bold_fonts_only_for_long_form(
         tweaks={
             "branding": {"university_name": "UNSW Sydney"},
             "pdf": {
-                "top_disclaimer": "Guide <b>Important</b> notice.",
-                "footer_left": "Contact <b>The Nucleus</b>.",
+                "top_disclaimer": "Guide <b><i>Important</i></b> notice.",
+                "footer_left": "Contact <a href=\"https://example.edu\">The Nucleus</a>.",
             },
         },
         years=[
@@ -495,6 +509,201 @@ def test_render_pdf_long_form_bold_markup_uses_bold_fonts_only_for_long_form(
     font_names = [name for name, _size in fake.set_font_calls]
     assert "Helvetica-Bold" in font_names
     assert "Helvetica" in font_names
+    assert any("Important" in text for _x, _y, text in fake.drawn_text)
+    assert any(url == "https://example.edu" for url, _rect, _relative in fake.link_url_calls)
+
+
+def test_render_pdf_wraps_long_link_into_multiple_clickable_fragments(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "top_disclaimer": (
+                    'See <a href="https://example.edu/handbook/very/long/path">'
+                    "the very long official handbook link for enrolment guidance and policy updates"
+                    "</a> before enrolling."
+                ),
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    matching = [
+        (url, rect, relative)
+        for url, rect, relative in fake.link_url_calls
+        if url == "https://example.edu/handbook/very/long/path"
+    ]
+    assert len(matching) >= 2
+    assert all(relative == 0 for _url, _rect, relative in matching)
+
+
+def test_render_pdf_link_style_applies_underline_and_colour(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "link_style": {"underline": True, "colour": "#cc0000"},
+                "top_disclaimer": "See <a href=\"https://example.edu\">Handbook</a>.",
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    assert len(fake.link_url_calls) >= 1
+    assert len(fake.line_calls) >= 1
+    assert colors.HexColor("#cc0000") in fake.fill_color_calls
+
+
+def test_render_pdf_does_not_link_or_underline_space_before_link(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "link_style": {"underline": True, "colour": "#cc0000"},
+                "top_disclaimer": "See <a href=\"https://example.edu\">Handbook</a> now.",
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    matching = [
+        (url, rect)
+        for url, rect, _relative in fake.link_url_calls
+        if url == "https://example.edu"
+    ]
+    assert len(matching) == 1
 
 
 def test_render_pdf_footer_page_tokens_are_expanded(

@@ -1,7 +1,10 @@
 from sequence_visualiser.text_markup import (
     parse_inline_bold,
     parse_inline_bold_with_warnings,
+    parse_inline_markup,
+    parse_inline_markup_with_warnings,
     render_inline_bold_html,
+    render_inline_markup_html,
 )
 
 
@@ -43,3 +46,39 @@ def test_parse_inline_bold_with_warnings_reports_unmatched_closing_tag() -> None
     assert parsed.warnings == [
         "Closing </b> tag without matching opening <b>; rendering text literally"
     ]
+
+
+def test_parse_inline_markup_supports_italic_and_links() -> None:
+    runs = parse_inline_markup('Read <i>carefully</i> at <a href="https://example.edu">Handbook</a>')
+
+    assert [
+        (run.text, run.bold, run.italic, run.href)
+        for run in runs
+    ] == [
+        ("Read ", False, False, None),
+        ("carefully", False, True, None),
+        (" at ", False, False, None),
+        ("Handbook", False, False, "https://example.edu"),
+    ]
+
+
+def test_parse_inline_markup_treats_disallowed_href_as_literal() -> None:
+    parsed = parse_inline_markup_with_warnings(
+        '<a href="javascript:alert(1)">Bad</a>'
+    )
+
+    assert [(run.text, run.bold, run.italic, run.href) for run in parsed.runs] == [
+        ('<a href="javascript:alert(1)">Bad</a>', False, False, None)
+    ]
+    assert parsed.warnings == ["Invalid or disallowed <a href> URL found; rendering text literally"]
+
+
+def test_render_inline_markup_html_renders_strong_em_and_anchor() -> None:
+    rendered = render_inline_markup_html(
+        'Use <b><i>care</i></b> and <a href="https://example.edu">Guide & Tips</a>'
+    )
+
+    assert str(rendered) == (
+        "Use <strong><em>care</em></strong> and "
+        '<a href="https://example.edu">Guide &amp; Tips</a>'
+    )
