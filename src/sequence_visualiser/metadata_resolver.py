@@ -205,7 +205,7 @@ def _identity_from_metadata_map(
     program_id: str,
 ) -> ProgramIdentity:
     """Build ProgramIdentity from normalized metadata values."""
-    primary_specialisation = specialisation_codes[0]
+    primary_specialisation = specialisation_codes[0] if specialisation_codes else ""
     return ProgramIdentity(
         plan_code=plan_code,
         specialisation_code=primary_specialisation,
@@ -266,10 +266,6 @@ def _resolve_plan_embedded_metadata(plan: Plan) -> tuple[ProgramIdentity, RuleMe
         missing.append("program_metadata.program.id")
     if not program_name:
         missing.append("program_metadata.program.name")
-    if not specialisation_codes:
-        missing.append("program_metadata.specialisation[].id")
-    if not specialisation_names:
-        missing.append("program_metadata.specialisation[].name")
     if missing:
         raise RuleResolutionError(
             f"Missing embedded metadata keys in {plan.source_path}: {', '.join(missing)}"

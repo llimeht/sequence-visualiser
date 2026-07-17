@@ -193,6 +193,51 @@ def test_resolve_metadata_from_plan_embedded_block(tmp_path: Path) -> None:
     assert metadata.rule_file == plan_path
 
 
+def test_resolve_metadata_from_plan_embedded_block_no_specialisation(
+    tmp_path: Path,
+) -> None:
+    plan_path = tmp_path / "8717_2025_T2.json"
+    plan_path.write_text(
+        """
+        {
+          "sheet": "8717",
+          "program": "8717",
+          "career": "Postgraduate",
+          "uoc": 96,
+          "intake": "2025 T2",
+          "program_metadata": {
+            "plan_code": "8717",
+            "plan_description": "Standard sequence",
+            "program": {
+              "id": "8717",
+              "name": "Master of Engineering Science"
+            },
+            "specialisation": []
+          },
+          "courses": []
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    plan = load_plan(plan_path)
+    identity, metadata = resolve_metadata(
+        plan=plan,
+        source=MetadataSource.PLAN,
+        rules_dir=tmp_path / "rules",
+    )
+
+    assert identity.plan_code == "8717"
+    assert identity.specialisation_codes == []
+    assert identity.specialisation_code == ""
+    assert identity.degree_code == "8717"
+    assert metadata.program_id == "8717"
+    assert metadata.program_name == "Master of Engineering Science"
+    assert metadata.specialisation_names == []
+    assert metadata.plan_description == "Standard sequence"
+    assert metadata.rule_file == plan_path
+
+
 def test_resolve_metadata_from_spreadsheet_row(tmp_path: Path) -> None:
     mapping = tmp_path / "mapping.csv"
     mapping.write_text(

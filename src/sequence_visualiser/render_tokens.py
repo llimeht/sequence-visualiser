@@ -59,11 +59,7 @@ def runtime_token_values(
         if context.specialisation_codes
         else context.specialisation_code
     )
-    majors_text = (
-        ", ".join(context.rule_metadata.specialisation_names)
-        if context.rule_metadata.specialisation_names
-        else "None"
-    )
+    majors_text = ", ".join(context.rule_metadata.specialisation_names)
     return {
         "date": date_value,
         "year": year_value,
