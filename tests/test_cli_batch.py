@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from _pytest.monkeypatch import MonkeyPatch
+from pytest import CaptureFixture
 
 from sequence_visualiser.cli import main
 from sequence_visualiser.metadata_resolver import resolve_rule_metadata
@@ -34,6 +35,25 @@ def _write_plan(path: Path, period: str) -> None:
         """,
         encoding="utf-8",
     )
+
+
+def _write_plan_with_code(path: Path, period: str, code: str) -> None:
+        path.write_text(
+                f"""
+                {{
+                    "sheet": "CEICAH3707",
+                    "program": "CEICAH3707",
+                    "career": "Undergraduate",
+                    "uoc": 192,
+                    "intake": "2026 T1",
+                    "plan_description": "Flex",
+                    "courses": [
+                        {{"enrol_year": "Year 1", "year": 2026, "period": "{period}", "course_n": "Course 1", "code": "{code}", "title": "Math", "uoc": 6, "prerequisites": "."}}
+                    ]
+                }}
+                """,
+                encoding="utf-8",
+        )
 
 
 def test_cli_continues_after_plan_failure(tmp_path: Path) -> None:
@@ -521,6 +541,95 @@ def test_cli_defaults_resolve_from_project_root_not_cwd(
     )
 
     assert rc == 0
+
+
+def test_cli_warns_for_noncanonical_course_code_without_override(
+    tmp_path: Path, capsys: CaptureFixture[str]
+) -> None:
+    templates_dir = tmp_path / "templates"
+    (templates_dir / "config").mkdir(parents=True)
+    (templates_dir / "config" / "defaults.json").write_text("{}", encoding="utf-8")
+    (templates_dir / "sequence.html.j2").write_text(HTML_TEMPLATE, encoding="utf-8")
+
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan_with_code(plan, "Term 1", "FLEX-A")
+
+    output_dir = tmp_path / "out"
+    rc = main(
+        [
+            str(plan),
+            "--output-dir",
+            str(output_dir),
+            "--rules-dir",
+            str(rules_dir),
+            "--templates-dir",
+            str(templates_dir),
+            "--config-dir",
+            str(templates_dir / "config"),
+            "--metadata-source",
+            "rules",
+            "--formats",
+            "html",
+        ]
+    )
+
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "WARN:" in err
+    assert "FLEX-A" in err
+
+
+def test_cli_does_not_warn_for_noncanonical_code_when_overridden(
+    tmp_path: Path, capsys: CaptureFixture[str]
+) -> None:
+    templates_dir = tmp_path / "templates"
+    (templates_dir / "config").mkdir(parents=True)
+    (templates_dir / "config" / "defaults.json").write_text("{}", encoding="utf-8")
+    (templates_dir / "config" / "course-overrides.json").write_text(
+        '{"FLEX-A": {"code": "MATH1131", "title": "Math"}}',
+        encoding="utf-8",
+    )
+    (templates_dir / "sequence.html.j2").write_text(HTML_TEMPLATE, encoding="utf-8")
+
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan_with_code(plan, "Term 1", "FLEX-A")
+
+    output_dir = tmp_path / "out"
+    rc = main(
+        [
+            str(plan),
+            "--output-dir",
+            str(output_dir),
+            "--rules-dir",
+            str(rules_dir),
+            "--templates-dir",
+            str(templates_dir),
+            "--config-dir",
+            str(templates_dir / "config"),
+            "--metadata-source",
+            "rules",
+            "--formats",
+            "html",
+        ]
+    )
+
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "WARN:" not in err
     assert (output_dir / "CEICAH3707_2026_T1.html").exists()
 
 

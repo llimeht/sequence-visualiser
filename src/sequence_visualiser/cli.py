@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import re
 import sys
 from collections.abc import Mapping
 from datetime import date
@@ -23,12 +24,15 @@ from .course_overrides import (
     load_course_overrides,
 )
 from .html_renderer import render_html
-from .models import RenderContext
+from .models import Plan, RenderContext
 from .pdf_renderer import PdfRenderError, render_pdf
 from .plan_loader import PlanParseError, load_plan
 from .metadata_resolver import MetadataSource, RuleResolutionError, resolve_metadata
 from .render_tokens import TokenExpansionError
 from .timeline import TimelineError, build_year_layouts
+
+
+COURSE_CODE_PATTERN = re.compile(r"^[A-Z]{4}\d{4}$")
 
 
 @dataclass(frozen=True)
@@ -145,6 +149,26 @@ def _resolve_resource_dirs(args: argparse.Namespace) -> tuple[Path, Path, Path, 
     return rules_dir, templates_dir, config_dir, template_overrides_dir
 
 
+def _warn_on_noncanonical_course_codes(
+    plan_file: Path,
+    plan: Plan,
+    course_overrides: dict[str, dict[str, str]],
+) -> None:
+    """Warn when plan course codes are non-canonical and not override-backed."""
+    for course in plan.courses:
+        code = course.code.strip()
+        if COURSE_CODE_PATTERN.fullmatch(code):
+            continue
+        if code.upper() in course_overrides:
+            continue
+        print(
+            "WARN: "
+            f"{plan_file} includes non-canonical course code {code!r} "
+            "that is not defined in course-overrides.json",
+            file=sys.stderr,
+        )
+
+
 def _render_single_plan(
     plan_file: Path,
     output_dir: Path,
@@ -177,6 +201,7 @@ def _render_single_plan(
     )
 
     course_overrides = load_course_overrides(config_dir, template_overrides_dir)
+    _warn_on_noncanonical_course_codes(plan_file, plan, course_overrides)
     patched_courses = apply_course_overrides(plan.courses, course_overrides)
     if patched_courses is not plan.courses:
         plan = dataclasses.replace(plan, courses=patched_courses)
