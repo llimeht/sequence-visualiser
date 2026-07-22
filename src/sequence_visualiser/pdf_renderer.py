@@ -796,6 +796,50 @@ def _period_layout(pdf_tweaks: dict[str, Any]) -> float:
     return configured
 
 
+def _year_row_height_layout(
+    pdf_tweaks: dict[str, Any],
+    *,
+    available_height: float,
+    year_count: int,
+) -> float:
+    """Calculate row height for year blocks with optional min/max constraints.
+
+    Config values are interpreted in millimetres:
+    - pdf.year_row_min_height_mm
+    - pdf.year_row_max_height_mm
+    """
+    if year_count <= 0:
+        raise PdfRenderError("No year data to render")
+
+    base_row_height = available_height / year_count
+
+    min_height_mm = _float_config(pdf_tweaks.get("year_row_min_height_mm"))
+    max_height_mm = _float_config(pdf_tweaks.get("year_row_max_height_mm"))
+    min_height = min_height_mm * mm if min_height_mm is not None else None
+    max_height = max_height_mm * mm if max_height_mm is not None else None
+
+    if min_height is not None and max_height is not None and min_height > max_height:
+        logger.warning(
+            "Configured pdf.year_row_min_height_mm is greater than pdf.year_row_max_height_mm; "
+            "using min height as both bounds."
+        )
+        max_height = min_height
+
+    if min_height is not None and (min_height * year_count) > available_height:
+        raise PdfRenderError(
+            "Configured pdf.year_row_min_height_mm does not fit the available page height "
+            f"for {year_count} year rows"
+        )
+
+    row_height = base_row_height
+    if min_height is not None:
+        row_height = max(row_height, min_height)
+    if max_height is not None:
+        row_height = min(row_height, max_height)
+
+    return row_height
+
+
 def _header_background_layout(
     pdf_tweaks: dict[str, Any],
 ) -> tuple[colors.Color | None, float, float]:
@@ -1487,10 +1531,11 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
     available_bottom = margin + footer_block_height
     available_height = available_top - available_bottom
 
-    if not context.years:
-        raise PdfRenderError("No year data to render")
-
-    row_height = available_height / len(context.years)
+    row_height = _year_row_height_layout(
+        pdf_tweaks,
+        available_height=available_height,
+        year_count=len(context.years),
+    )
 
     for index, year in enumerate(context.years):
         y_top = available_top - (index * row_height)

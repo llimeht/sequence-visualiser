@@ -104,6 +104,12 @@ Supported keys in the current implementation:
 - `pdf.period_label_y_offset_pt`
   - Optional vertical offset in points from the year heading to term/semester labels.
   - Increase this to move term/semester labels lower.
+- `pdf.year_row_min_height_mm`
+  - Optional minimum height (in millimetres) for each year row on PDF page 1.
+  - If the configured minimum cannot fit all year rows on the page, PDF rendering fails with a clear error.
+- `pdf.year_row_max_height_mm`
+  - Optional maximum height (in millimetres) for each year row on PDF page 1.
+  - Useful for plans with only a few years, to avoid oversized rows.
 - `pdf.second_page`
   - Optional second-page configuration block.
   - `enabled` controls whether a second PDF page is rendered.

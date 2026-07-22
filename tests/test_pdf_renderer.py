@@ -957,6 +957,130 @@ def test_render_pdf_header_lines_can_be_swapped_via_config(
     assert "UNSW Sydney" in right_aligned
     assert "3707 Flex - 2026 T1" in right_aligned
 
+def test_render_pdf_respects_year_row_max_height_mm(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "pdf": {
+                "year_row_max_height_mm": 30,
+            }
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    year_rects = [rect for rect in fake.rect_calls if rect[2] > 500 and rect[4] == 1]
+    assert len(year_rects) == 1
+
+    expected_height = (30 * mm) - 5
+    assert abs(year_rects[0][3] - expected_height) < 0.1
+
+
+def test_render_pdf_raises_when_year_row_min_height_mm_cannot_fit(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "pdf": {
+                "year_row_min_height_mm": 150,
+            }
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            ),
+            YearLayout(
+                enrol_year="Year 2",
+                year=2027,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            ),
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+
+    try:
+        render_pdf(context, tmp_path / "out.pdf", tmp_path)
+        raise AssertionError("Expected PdfRenderError")
+    except PdfRenderError as exc:
+        assert "year_row_min_height_mm" in str(exc)
+
 
 def test_render_pdf_year_label_includes_calendar_year(
     monkeypatch: MonkeyPatch, tmp_path: Path
