@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from collections import deque
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -18,6 +19,93 @@ from .models import Course
 
 class CourseOverrideError(ValueError):
     """Raised when a course-overrides file is malformed."""
+
+
+_NAMESPACE_SEPARATOR = "::"
+_ALIASES_FIELD = "aliases"
+
+
+def _normalise_override_key(key: str) -> str:
+    """Normalise keys for case-insensitive matching."""
+    return key.strip().upper()
+
+
+def _expand_aliases(
+    entries: dict[str, dict[str, str]],
+    aliases_by_key: dict[str, list[str]],
+    path: Path,
+) -> dict[str, dict[str, str]]:
+    """Expand alias keys into the override map with collision protection."""
+    expanded = dict(entries)
+    explicit_keys = set(entries)
+    queue: deque[tuple[str, dict[str, str], list[str]]] = deque(
+        (key, entry, aliases_by_key.get(key, [])) for key, entry in entries.items()
+    )
+
+    while queue:
+        _source_key, entry, aliases = queue.popleft()
+        if not aliases:
+            continue
+        for raw_alias in aliases:
+            alias_key = _normalise_override_key(raw_alias)
+            if not alias_key:
+                continue
+            if alias_key in explicit_keys:
+                continue
+            if alias_key in expanded:
+                existing_entry = expanded[alias_key]
+                if existing_entry is entry:
+                    continue
+                raise CourseOverrideError(
+                    f"Alias {alias_key!r} in {path} maps to multiple entries"
+                )
+            expanded[alias_key] = entry
+            queue.append((alias_key, entry, aliases))
+
+    return expanded
+
+
+def _build_override_lookup_keys(
+    course_code: str,
+    namespace_candidates: list[str] | None,
+) -> list[str]:
+    """Build lookup keys from most specific (namespaced) to plain code."""
+    code_key = _normalise_override_key(course_code)
+    keys: list[str] = []
+    seen: set[str] = set()
+    for namespace in namespace_candidates or []:
+        namespace_key = _normalise_override_key(namespace)
+        if not namespace_key:
+            continue
+        candidate = f"{namespace_key}{_NAMESPACE_SEPARATOR}{code_key}"
+        if candidate not in seen:
+            keys.append(candidate)
+            seen.add(candidate)
+    if code_key not in seen:
+        keys.append(code_key)
+    return keys
+
+
+def resolve_course_override(
+    course_code: str,
+    overrides: dict[str, dict[str, str]],
+    namespace_candidates: list[str] | None = None,
+) -> dict[str, str] | None:
+    """Resolve an override entry for a course code with namespace fallbacks."""
+    for key in _build_override_lookup_keys(course_code, namespace_candidates):
+        entry = overrides.get(key)
+        if entry is not None:
+            return entry
+    return None
+
+
+def has_course_override(
+    course_code: str,
+    overrides: dict[str, dict[str, str]],
+    namespace_candidates: list[str] | None = None,
+) -> bool:
+    """Return True when any override entry applies to a course code."""
+    return resolve_course_override(course_code, overrides, namespace_candidates) is not None
 
 
 def _load_file(path: Path) -> dict[str, dict[str, str]]:
@@ -41,6 +129,7 @@ def _load_file(path: Path) -> dict[str, dict[str, str]]:
         str(key): value for key, value in cast(Mapping[object, Any], data).items()
     }
     result: dict[str, dict[str, str]] = {}
+    aliases_by_key: dict[str, list[str]] = {}
     for raw_key, value in typed_data.items():
         if raw_key.startswith("_"):
             continue  # skip comment-style keys
@@ -49,18 +138,34 @@ def _load_file(path: Path) -> dict[str, dict[str, str]]:
                 f"Entry for {raw_key!r} in {path} must be a JSON object"
             )
         entry: dict[str, str] = {}
+        key = _normalise_override_key(raw_key)
         for field, field_value in cast(Mapping[object, Any], value).items():
             if not isinstance(field, str):
                 raise CourseOverrideError(
                     f"Entry keys for {raw_key!r} in {path} must be strings"
                 )
+            if field == _ALIASES_FIELD:
+                if not isinstance(field_value, list):
+                    raise CourseOverrideError(
+                        f"Entry value for {raw_key!r}.{field} in {path} must be a JSON array of strings"
+                    )
+                aliases: list[str] = []
+                for index, alias_value in enumerate(cast(list[Any], field_value)):
+                    if not isinstance(alias_value, str):
+                        raise CourseOverrideError(
+                            f"Entry value for {raw_key!r}.{field}[{index}] in {path} must be a string"
+                        )
+                    if alias_value.strip():
+                        aliases.append(alias_value)
+                aliases_by_key[key] = aliases
+                continue
             if not isinstance(field_value, str):
                 raise CourseOverrideError(
                     f"Entry value for {raw_key!r}.{field} in {path} must be a string"
                 )
             entry[field] = field_value
-        result[raw_key.upper()] = entry
-    return result
+        result[key] = entry
+    return _expand_aliases(result, aliases_by_key, path)
 
 
 def load_course_overrides(
@@ -92,6 +197,7 @@ def load_course_overrides(
 def apply_course_overrides(
     courses: list[Course],
     overrides: dict[str, dict[str, str]],
+    namespace_candidates: list[str] | None = None,
 ) -> list[Course]:
     """Return a new list with any matching courses substituted.
 
@@ -106,7 +212,11 @@ def apply_course_overrides(
 
     result: list[Course] = []
     for course in courses:
-        entry = overrides.get(course.code.upper())
+        entry = resolve_course_override(
+            course.code,
+            overrides,
+            namespace_candidates=namespace_candidates,
+        )
         if entry is None:
             result.append(course)
         else:

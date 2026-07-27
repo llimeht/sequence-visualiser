@@ -1,19 +1,18 @@
 {
   "_comment": "Maps incoming course codes (matched case-insensitively) to display overrides. Omit 'code' to keep the original; set to '' to suppress it. Omit 'title' to keep the original.",
-  "GenEd1": {
+  "MyStreamElective": {
     "code": "Elective",
-    "title": "Cross-disciplinary (XD) Elective"
+    "title": "An elective course in MyStream",
+    "aliases": ["OtherStreamElective", "ABCD::MyStreamElective"]
   },
-  "GenEd2": {
+  "XDelective": {
     "code": "Elective",
-    "title": "Cross-disciplinary (XD) Elective"
+    "title": "Cross-disciplinary (XD) Elective",
+    "aliases": ["GenEd", "GenEd1", "GenEd2", "XDElective1", "XDElective2", "GEN ED"]
   },
-  "FREE1": {
+  "FREE": {
     "code": "Elective",
-    "title": "Free Elective (any course)"
-  },
-  "FREE2": {
-    "code": "Elective",
-    "title": "Free Elective (any course)"
+    "title": "Free Elective (any course)",
+    "aliases": ["FREE1", "FREE2", "FREE3", "FREE4", "FREE5", "FREE6"]
   }
 }

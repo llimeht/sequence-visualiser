@@ -21,6 +21,7 @@ from .config_loader import ConfigError, load_tweaks
 from .course_overrides import (
     CourseOverrideError,
     apply_course_overrides,
+    has_course_override,
     load_course_overrides,
 )
 from .html_renderer import render_html
@@ -153,13 +154,18 @@ def _warn_on_noncanonical_course_codes(
     plan_file: Path,
     plan: Plan,
     course_overrides: dict[str, dict[str, str]],
+    namespace_candidates: list[str] | None = None,
 ) -> None:
     """Warn when plan course codes are non-canonical and not override-backed."""
     for course in plan.courses:
         code = course.code.strip()
         if COURSE_CODE_PATTERN.fullmatch(code):
             continue
-        if code.upper() in course_overrides:
+        if has_course_override(
+            code,
+            course_overrides,
+            namespace_candidates=namespace_candidates,
+        ):
             continue
         print(
             "WARN: "
@@ -201,8 +207,22 @@ def _render_single_plan(
     )
 
     course_overrides = load_course_overrides(config_dir, template_overrides_dir)
-    _warn_on_noncanonical_course_codes(plan_file, plan, course_overrides)
-    patched_courses = apply_course_overrides(plan.courses, course_overrides)
+    namespace_candidates = [
+        identity.plan_code,
+        *identity.specialisation_codes,
+        identity.degree_code,
+    ]
+    _warn_on_noncanonical_course_codes(
+        plan_file,
+        plan,
+        course_overrides,
+        namespace_candidates=namespace_candidates,
+    )
+    patched_courses = apply_course_overrides(
+        plan.courses,
+        course_overrides,
+        namespace_candidates=namespace_candidates,
+    )
     if patched_courses is not plan.courses:
         plan = dataclasses.replace(plan, courses=patched_courses)
 

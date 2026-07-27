@@ -633,6 +633,63 @@ def test_cli_does_not_warn_for_noncanonical_code_when_overridden(
     assert (output_dir / "CEICAH3707_2026_T1.html").exists()
 
 
+def test_cli_uses_namespaced_override_before_plain_fallback(
+    tmp_path: Path, capsys: CaptureFixture[str]
+) -> None:
+    templates_dir = tmp_path / "templates"
+    (templates_dir / "config").mkdir(parents=True)
+    (templates_dir / "config" / "defaults.json").write_text("{}", encoding="utf-8")
+    (templates_dir / "config" / "course-overrides.json").write_text(
+        """
+        {
+          "FLEX-A": {"code": "GENERIC1000", "title": "Generic elective"},
+          "CEICAH3707::FLEX-A": {"code": "MATH1131", "title": "Mathematics 1A"}
+        }
+        """,
+        encoding="utf-8",
+    )
+    (templates_dir / "sequence.html.j2").write_text(
+        """<!doctype html><html><body>{% for year in years %}{% for period in year.periods %}{% for course in period.courses %}<div class=\"course\">{{ course.code }}|{{ course.title }}</div>{% endfor %}{% endfor %}{% endfor %}</body></html>""",
+        encoding="utf-8",
+    )
+
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan_with_code(plan, "Term 1", "FLEX-A")
+
+    output_dir = tmp_path / "out"
+    rc = main(
+        [
+            str(plan),
+            "--output-dir",
+            str(output_dir),
+            "--rules-dir",
+            str(rules_dir),
+            "--templates-dir",
+            str(templates_dir),
+            "--config-dir",
+            str(templates_dir / "config"),
+            "--metadata-source",
+            "rules",
+            "--formats",
+            "html",
+        ]
+    )
+
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "WARN:" not in err
+    html = (output_dir / "CEICAH3707_2026_T1.html").read_text(encoding="utf-8")
+    assert "MATH1131" in html
+    assert "Mathematics 1A" in html
+
+
 def test_default_overrides_remain_cwd_relative(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
