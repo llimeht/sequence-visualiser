@@ -1,3 +1,4 @@
+import dataclasses
 from pathlib import Path
 
 from sequence_visualiser.course_overrides import (
@@ -7,7 +8,8 @@ from sequence_visualiser.course_overrides import (
     load_course_overrides,
     resolve_course_override,
 )
-from sequence_visualiser.models import Course
+from sequence_visualiser.models import Course, Plan
+from sequence_visualiser.timeline import build_year_layouts
 
 
 def _course(code: str) -> Course:
@@ -136,3 +138,88 @@ def test_load_course_overrides_aliases_must_be_string_list(tmp_path: Path) -> No
         assert "must be a JSON array of strings" in str(exc)
     else:
         raise AssertionError("Expected CourseOverrideError")
+
+
+def test_apply_course_overrides_drops_fully_blank_course() -> None:
+    courses = [_course("FLEX-A")]
+    overrides = {"FLEX-A": {"code": "", "title": ""}}
+
+    patched = apply_course_overrides(courses, overrides)
+
+    assert patched == []
+
+
+def test_apply_course_overrides_keeps_course_when_only_code_is_blank() -> None:
+    courses = [_course("FLEX-A")]
+    overrides = {"FLEX-A": {"code": "", "title": "Mapped title"}}
+
+    patched = apply_course_overrides(courses, overrides)
+
+    assert len(patched) == 1
+    assert patched[0].code == ""
+    assert patched[0].title == "Mapped title"
+
+
+def test_blank_override_removes_extended_period_pressure(tmp_path: Path) -> None:
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(
+        """
+        {
+          "sheet": "CEICAH3707",
+          "program": "CEICAH3707",
+          "career": "Undergraduate",
+          "uoc": 192,
+          "intake": "2026 T1",
+          "courses": [
+            {"enrol_year": "Year 1", "year": 2026, "period": "Summer Term", "course_n": "Course 1", "code": "SUMMER-PLACEHOLDER", "title": "Placeholder", "uoc": 6, "prerequisites": "."},
+            {"enrol_year": "Year 1", "year": 2026, "period": "Term 1", "course_n": "Course 2", "code": "MATH1131", "title": "Math", "uoc": 6, "prerequisites": "."}
+          ]
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    plan = Plan(
+        sheet="CEICAH3707",
+        program="CEICAH3707",
+        career="Undergraduate",
+        uoc=192,
+        intake="2026 T1",
+        courses=[
+            Course(
+                enrol_year="Year 1",
+                year=2026,
+                period="Summer Term",
+                course_n="Course 1",
+                code="SUMMER-PLACEHOLDER",
+                title="Placeholder",
+                uoc=6,
+                prerequisites=".",
+            ),
+            Course(
+                enrol_year="Year 1",
+                year=2026,
+                period="Term 1",
+                course_n="Course 2",
+                code="MATH1131",
+                title="Math",
+                uoc=6,
+                prerequisites=".",
+            ),
+        ],
+        source_path=plan_path,
+    )
+
+    patched_courses = apply_course_overrides(
+        plan.courses,
+        {"SUMMER-PLACEHOLDER": {"code": "", "title": ""}},
+    )
+    patched_plan = dataclasses.replace(plan, courses=patched_courses)
+    layouts = build_year_layouts(patched_plan)
+
+    assert [year.calendar_model for year in layouts] == ["trimesters_standard"]
+    assert [period.period for period in layouts[0].periods] == [
+        "Term 1",
+        "Term 2",
+        "Term 3",
+    ]

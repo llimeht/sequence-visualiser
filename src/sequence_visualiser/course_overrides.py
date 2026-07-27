@@ -205,7 +205,8 @@ def apply_course_overrides(
     - ``"code"``: replacement course code (use ``""`` to suppress it)
     - ``"title"``: replacement display title
 
-    Fields absent from the entry are left unchanged.
+    Fields absent from the entry are left unchanged. If both resulting code and
+    title are blank, the course is removed from the output entirely.
     """
     if not overrides:
         return courses
@@ -220,11 +221,12 @@ def apply_course_overrides(
         if entry is None:
             result.append(course)
         else:
-            result.append(
-                dataclasses.replace(
-                    course,
-                    code=entry.get("code", course.code),
-                    title=entry.get("title", course.title),
-                )
+            patched = dataclasses.replace(
+                course,
+                code=entry.get("code", course.code),
+                title=entry.get("title", course.title),
             )
+            if not patched.code.strip() and not patched.title.strip():
+                continue
+            result.append(patched)
     return result
