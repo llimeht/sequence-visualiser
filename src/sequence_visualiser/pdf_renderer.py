@@ -267,16 +267,6 @@ def _period_fill_color(
         )
         return _to_color(model_period_overrides[period_label], fallback)
 
-    family_overrides = _colour_mapping(_colour_mapping(colours_config, "families"), calendar_family)
-    family_period_overrides = _colour_mapping(family_overrides, "periods")
-    if period_label in family_period_overrides:
-        fallback = (
-            DEFAULT_TERM_FILLS.get(period_label, colors.white)
-            if calendar_type == "term"
-            else DEFAULT_SEMESTER_FILLS.get(period_label, colors.white)
-        )
-        return _to_color(family_period_overrides[period_label], fallback)
-
     if calendar_type == "term":
         term_overrides = _colour_mapping(colours_config, "terms")
         return _to_color(

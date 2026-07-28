@@ -2436,7 +2436,7 @@ def test_render_pdf_renders_extended_model_period_headers(
     assert "Semester 1" in fake.drawn_strings
 
 
-def test_render_pdf_uses_model_colour_overrides_before_family(
+def test_render_pdf_uses_model_colour_overrides_before_terms(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     plan_path = tmp_path / "CEICAH3707_2026_T1.json"
@@ -2474,9 +2474,6 @@ def test_render_pdf_uses_model_colour_overrides_before_family(
                         "trimesters_extended": {
                             "periods": {"Summer Term": "#11aa22"}
                         }
-                    },
-                    "families": {
-                        "trimesters": {"periods": {"Summer Term": "#aa2211"}}
                     },
                     "terms": {"Summer Term": "#2211aa"},
                 }
@@ -2516,3 +2513,82 @@ def test_render_pdf_uses_model_colour_overrides_before_family(
         )
 
     assert any(_is_expected_model_green(fill) for fill in fake.fill_color_calls)
+
+
+def test_render_pdf_falls_back_to_terms_when_model_period_missing(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    summer_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Summer Term",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[summer_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "pdf": {
+                "colours": {
+                    "models": {
+                        "trimesters_extended": {
+                            "periods": {"Term 1": "#11aa22"}
+                        }
+                    },
+                    "terms": {"Summer Term": "#2211aa"},
+                }
+            }
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Summer Term", courses=[summer_course])],
+                calendar_family="trimesters",
+                calendar_model="trimesters_extended",
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out-fallback.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+
+    def _is_expected_terms_blue(fill: object) -> bool:
+        red = getattr(fill, "red", None)
+        green = getattr(fill, "green", None)
+        blue = getattr(fill, "blue", None)
+        if red is None or green is None or blue is None:
+            return False
+        return (
+            abs(float(red) - (34 / 255)) < 1e-6
+            and abs(float(green) - (17 / 255)) < 1e-6
+            and abs(float(blue) - (170 / 255)) < 1e-6
+        )
+
+    assert any(_is_expected_terms_blue(fill) for fill in fake.fill_color_calls)

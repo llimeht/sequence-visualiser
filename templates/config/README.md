@@ -25,18 +25,14 @@ The PDF renderer supports configurable background colours under `pdf.colours`:
   - `trimesters_extended`: `Summer Term`, `Term 1`, `Term 2`, `Term 3`
   - `semesters_standard`: `Semester 1`, `Semester 2`
 - `semesters_extended`: `Summer Term`, `Semester 1`, `Winter Term`, `Semester 2`
-- `families`: per-calendar-family fallback period colours
-  - `trimesters`
-  - `semesters`
 - `terms`: per-term box background (`Term 1`, `Term 2`, `Term 3`)
 - `semesters`: per-semester box background (`Semester 1`, `Semester 2`)
 
 Colour precedence for period boxes:
 
 1. `pdf.colours.models.<calendar_model>.periods.<period_label>`
-2. `pdf.colours.families.<calendar_family>.periods.<period_label>`
-3. Existing `pdf.colours.terms` / `pdf.colours.semesters`
-4. Built-in defaults
+2. Existing `pdf.colours.terms` / `pdf.colours.semesters`
+3. Built-in defaults
 
 Accepted values:
 

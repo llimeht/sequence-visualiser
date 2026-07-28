@@ -22,7 +22,7 @@ The CLI can process multiple plan files in one run (for example, shell globs).
   - Semesters standard: Semester 1, Semester 2
   - Semesters extended: Summer Term, Semester 1, Winter Term, Semester 2
 - When any extended label appears in a calendar family, all in-scope years for that family render the extended period sequence with blank placeholders for missing periods.
-- PDF and HTML period colours are configurable via `templates/config/*.json` (model/family-aware keys with fallback to legacy terms/semesters keys).
+- PDF and HTML period colours are configurable via `templates/config/*.json` (model-aware keys with fallback to terms/semesters keys).
 
 ## Install
 
