@@ -140,6 +140,101 @@ def test_load_course_overrides_aliases_must_be_string_list(tmp_path: Path) -> No
         raise AssertionError("Expected CourseOverrideError")
 
 
+def test_load_course_overrides_merges_split_files(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "course-overrides.json").write_text(
+        '{"FLEX-A": {"code": "GENERIC1000", "title": "Generic elective"}}',
+        encoding="utf-8",
+    )
+    (config_dir / "course-overrides-ceic.json").write_text(
+        '{"CEICAH3707::FLEX-A": {"code": "MATH1131", "title": "Mathematics 1A"}}',
+        encoding="utf-8",
+    )
+    (config_dir / "course-overrides-mech.json").write_text(
+        '{"MANFBH3707::FLEX-A": {"code": "MMAN1130", "title": "Engineering Mechanics"}}',
+        encoding="utf-8",
+    )
+
+    overrides = load_course_overrides(config_dir)
+
+    assert overrides["FLEX-A"]["code"] == "GENERIC1000"
+    assert overrides["CEICAH3707::FLEX-A"]["code"] == "MATH1131"
+    assert overrides["MANFBH3707::FLEX-A"]["code"] == "MMAN1130"
+
+
+def test_load_course_overrides_split_files_overlay_in_order(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    local_dir = tmp_path / "local-config"
+    local_dir.mkdir()
+
+    (config_dir / "course-overrides.json").write_text(
+        '{"FLEX-A": {"code": "GENERIC1000", "title": "Generic elective"}}',
+        encoding="utf-8",
+    )
+    (config_dir / "course-overrides-ceic.json").write_text(
+        '{"FLEX-A": {"code": "MATH1131", "title": "Mathematics 1A"}}',
+        encoding="utf-8",
+    )
+    (local_dir / "course-overrides-mech.json").write_text(
+        '{"FLEX-A": {"code": "MMAN1130", "title": "Engineering Mechanics"}}',
+        encoding="utf-8",
+    )
+
+    warnings: list[str] = []
+
+    def _capture_warning(message: str, *args: object, **kwargs: object) -> None:
+        warnings.append(message % args if args else message)
+
+    from sequence_visualiser import course_overrides as co
+
+    original_warning = co.logger.warning
+    co.logger.warning = _capture_warning  # type: ignore[assignment]
+    try:
+        overrides = load_course_overrides(config_dir, local_dir)
+    finally:
+        co.logger.warning = original_warning  # type: ignore[assignment]
+
+    assert overrides["FLEX-A"]["code"] == "MMAN1130"
+    assert overrides["FLEX-A"]["title"] == "Engineering Mechanics"
+    assert len(warnings) == 1
+    assert "Duplicate course override keys detected" in warnings[0]
+
+
+def test_load_course_overrides_warns_on_duplicate_keys(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+
+    (config_dir / "course-overrides.json").write_text(
+        '{"FLEX-A": {"code": "GENERIC1000", "title": "Generic elective"}}',
+        encoding="utf-8",
+    )
+    (config_dir / "course-overrides-ceic.json").write_text(
+        '{"FLEX-A": {"code": "MATH1131", "title": "Mathematics 1A"}}',
+        encoding="utf-8",
+    )
+
+    warnings: list[str] = []
+
+    def _capture_warning(message: str, *args: object, **kwargs: object) -> None:
+        warnings.append(message % args if args else message)
+
+    from sequence_visualiser import course_overrides as co
+
+    original_warning = co.logger.warning
+    co.logger.warning = _capture_warning  # type: ignore[assignment]
+    try:
+        overrides = load_course_overrides(config_dir)
+    finally:
+        co.logger.warning = original_warning  # type: ignore[assignment]
+
+    assert overrides["FLEX-A"]["code"] == "MATH1131"
+    assert overrides["FLEX-A"]["title"] == "Mathematics 1A"
+    assert len(warnings) == 1
+    assert "Duplicate course override keys detected" in warnings[0]
+
+
 def test_apply_course_overrides_drops_fully_blank_course() -> None:
     courses = [_course("FLEX-A")]
     overrides = {"FLEX-A": {"code": "", "title": ""}}

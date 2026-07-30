@@ -9,12 +9,16 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 from collections import deque
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
 from .models import Course
+
+
+logger = logging.getLogger(__name__)
 
 
 class CourseOverrideError(ValueError):
@@ -168,28 +172,75 @@ def _load_file(path: Path) -> dict[str, dict[str, str]]:
     return _expand_aliases(result, aliases_by_key, path)
 
 
+def _iter_override_files(config_dir: Path) -> list[Path]:
+    """Return override files in merge order for a config directory.
+
+    Order is deterministic:
+    1) ``course-overrides.json``
+    2) ``course-overrides-*.json`` (alphabetical)
+
+    Later files win when duplicate keys are present.
+    """
+    files: list[Path] = []
+
+    base_file = config_dir / "course-overrides.json"
+    if base_file.exists():
+        files.append(base_file)
+
+    split_files = sorted(
+        path
+        for path in config_dir.glob("course-overrides-*.json")
+        if path.is_file()
+    )
+    files.extend(split_files)
+    return files
+
+
 def load_course_overrides(
     config_dir: Path,
     local_config_dir: Path | None = None,
 ) -> dict[str, dict[str, str]]:
-    """Load course-overrides.json, optionally overlaid with a local copy.
+    """Load course override files, optionally overlaid with local files.
 
-    The canonical file is ``config_dir / "course-overrides.json"``.
-    If *local_config_dir* is given and contains its own ``course-overrides.json``,
-    those entries are merged on top (local entries win on conflict).
+    Canonical entries are loaded from ``config_dir`` using this order:
+    1) ``course-overrides.json``
+    2) ``course-overrides-*.json`` (alphabetical)
+
+    If *local_config_dir* is given, files with the same naming pattern are loaded
+    from that directory after canonical files, so local entries win on conflict.
 
     All keys are normalised to uppercase so matching is case-insensitive.
     """
     overrides: dict[str, dict[str, str]] = {}
+    key_sources: dict[str, Path] = {}
+    duplicate_chains: dict[str, list[Path]] = {}
 
-    canonical = config_dir / "course-overrides.json"
-    if canonical.exists():
-        overrides.update(_load_file(canonical))
+    def _merge_file(path: Path) -> None:
+        for key, value in _load_file(path).items():
+            previous = key_sources.get(key)
+            if previous is not None:
+                chain = duplicate_chains.setdefault(key, [previous])
+                chain.append(path)
+            overrides[key] = value
+            key_sources[key] = path
+
+    for path in _iter_override_files(config_dir):
+        _merge_file(path)
 
     if local_config_dir is not None:
-        local = local_config_dir / "course-overrides.json"
-        if local.exists():
-            overrides.update(_load_file(local))
+        for path in _iter_override_files(local_config_dir):
+            _merge_file(path)
+
+    if duplicate_chains:
+        details = "\n".join(
+            f"  {key}: {' -> '.join(file.name for file in chain)}"
+            for key, chain in sorted(duplicate_chains.items())
+        )
+        logger.warning(
+            "Duplicate course override keys detected (last entry loaded wins):\n"
+            "%s",
+            details,
+        )
 
     return overrides
 

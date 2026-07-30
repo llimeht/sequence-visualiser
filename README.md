@@ -147,6 +147,30 @@ Validation behavior:
 - Config layering details: `templates/config/README.md`
 - Shared template assets: `templates/assets/README.md`
 
+### Course override files
+
+Course display overrides can be used to change the displayed course code, course title, or even
+hide a course from display. This is needed for dealing with synthetic course codes that are
+used to represent elective buckets or other special cases in the enrolment sequences.
+The overrides can be split across multiple files and are merged automatically.
+
+Supported file names in each config directory (`templates/config` and `template-overrides/config`):
+
+- `course-overrides.json` (base/common entries)
+- `course-overrides-*.json` (split files such as `course-overrides-ceic.json`, `course-overrides-mech.json`)
+
+Merge order and precedence:
+
+1. Files in `--config-dir` are loaded first
+2. Within a directory, `course-overrides.json` is loaded first
+3. Then `course-overrides-*.json` files are loaded in alphabetical order
+4. Files in `--template-overrides-dir` are loaded after `--config-dir` using the same order
+
+If the same override key appears multiple times, the last loaded entry wins.
+A warning is logged if any duplicate course code is found.
+
+A setting both the course code and course title to `""` (empty string) will hide the course from display in the output.
+
 ## Supported markup and formatting
 
 Limited support is provided for a subset of HTML in the notes fields within the plans and within the text fields of the templates. The following are supported:

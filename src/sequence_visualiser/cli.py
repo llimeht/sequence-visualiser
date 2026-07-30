@@ -170,7 +170,7 @@ def _warn_on_noncanonical_course_codes(
         print(
             "WARN: "
             f"{plan_file} includes non-canonical course code {code!r} "
-            "that is not defined in course-overrides.json",
+            "that is not defined in course-override files",
             file=sys.stderr,
         )
 
