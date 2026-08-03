@@ -6,6 +6,7 @@ Loads and validates plan JSON files, converting them to Plan objects.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Mapping
 from pathlib import Path
@@ -121,3 +122,140 @@ def load_plan(plan_path: Path) -> Plan:
         source_path=plan_path,
         program_metadata=program_metadata,
     )
+
+
+def load_catalogue(catalogue_path: Path) -> dict[str, dict[str, Any]]:
+    """Load a catalogue JSON file, returning a dict keyed by course code.
+
+    Args:
+        catalogue_path: Path to the catalogue JSON file (flat array of course objects).
+    Returns:
+        Dict mapping course code to a dict with at least ``title`` and ``uoc`` keys.
+    Raises:
+        PlanParseError: If the file is missing, invalid JSON, or not a list.
+    """
+    try:
+        payload = json.loads(catalogue_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise PlanParseError(f"Catalogue file not found: {catalogue_path}") from exc
+    except json.JSONDecodeError as exc:
+        raise PlanParseError(f"Invalid JSON in catalogue file: {catalogue_path}") from exc
+
+    if not isinstance(payload, list):
+        raise PlanParseError(
+            f"Catalogue file {catalogue_path} must contain a JSON array at the top level"
+        )
+
+    catalogue: dict[str, dict[str, Any]] = {}
+    for index, entry in enumerate(cast(list[Any], payload), start=1):
+        if not isinstance(entry, Mapping):
+            raise PlanParseError(
+                f"Invalid entry at index {index} in catalogue {catalogue_path}: must be an object"
+            )
+        entry_mapping = cast(Mapping[str, Any], entry)
+        code = str(entry_mapping.get("code", "")).strip().upper()
+        if not code:
+            continue
+        catalogue[code] = {
+            "title": str(entry_mapping.get("title", "")).strip(),
+            "uoc": int(entry_mapping.get("uoc", 0) or 0),
+        }
+
+    return catalogue
+
+
+def merge_catalogue_overrides(
+    catalogue: dict[str, dict[str, Any]],
+    overrides_path: Path,
+) -> dict[str, dict[str, Any]]:
+    """Merge a catalogue overrides file into an existing catalogue dict.
+
+    The overrides file has the same format as the base catalogue (a flat JSON
+    array of course objects).  For each entry in the overrides file:
+
+    * If the course code already exists in *catalogue*, any non-empty ``title``
+      and non-zero ``uoc`` values in the override entry replace the
+      corresponding base values (field-level merge).
+    * If the course code is new, the entry is added to *catalogue*.
+
+    Args:
+        catalogue: Existing catalogue dict (modified in-place and returned).
+        overrides_path: Path to the overrides JSON file.
+    Returns:
+        The updated catalogue dict (same object as the input).
+    Raises:
+        PlanParseError: If the file is missing, invalid JSON, or not a list.
+    """
+    try:
+        payload = json.loads(overrides_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise PlanParseError(f"Catalogue overrides file not found: {overrides_path}") from exc
+    except json.JSONDecodeError as exc:
+        raise PlanParseError(
+            f"Invalid JSON in catalogue overrides file: {overrides_path}"
+        ) from exc
+
+    if not isinstance(payload, list):
+        raise PlanParseError(
+            f"Catalogue overrides file {overrides_path} must contain a JSON array at the top level"
+        )
+
+    for index, entry in enumerate(cast(list[Any], payload), start=1):
+        if not isinstance(entry, Mapping):
+            raise PlanParseError(
+                f"Invalid entry at index {index} in catalogue overrides {overrides_path}: "
+                "must be an object"
+            )
+        entry_mapping = cast(Mapping[str, Any], entry)
+        code = str(entry_mapping.get("code", "")).strip().upper()
+        if not code:
+            continue
+        override_title = str(entry_mapping.get("title", "")).strip()
+        override_uoc = int(entry_mapping.get("uoc", 0) or 0)
+        if code in catalogue:
+            if override_title:
+                catalogue[code]["title"] = override_title
+            if override_uoc:
+                catalogue[code]["uoc"] = override_uoc
+        else:
+            catalogue[code] = {"title": override_title, "uoc": override_uoc}
+
+    return catalogue
+
+
+def enrich_courses_from_catalogue(
+    courses: list[Course],
+    catalogue: dict[str, dict[str, Any]],
+) -> list[Course]:
+    """Fill in missing ``title`` and ``uoc`` values from a catalogue lookup.
+
+    Only fields that are considered missing (empty string for ``title``,
+    zero for ``uoc``) are replaced.  Courses whose code is absent from the
+    catalogue are left unchanged.
+
+    Args:
+        courses: List of Course objects to enrich.
+        catalogue: Dict returned by :func:`load_catalogue`.
+    Returns:
+        A new list if any courses were enriched, otherwise the original list.
+    """
+    result: list[Course] = []
+    changed = False
+    for course in courses:
+        entry = catalogue.get(course.code.strip().upper())
+        if entry is None:
+            result.append(course)
+            continue
+        needs_title = course.title == "" and entry["title"]
+        needs_uoc = course.uoc == 0 and entry["uoc"]
+        if needs_title or needs_uoc:
+            patches: dict[str, Any] = {}
+            if needs_title:
+                patches["title"] = entry["title"]
+            if needs_uoc:
+                patches["uoc"] = entry["uoc"]
+            result.append(dataclasses.replace(course, **patches))
+            changed = True
+        else:
+            result.append(course)
+    return result if changed else courses

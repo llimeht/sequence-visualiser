@@ -27,7 +27,13 @@ from .course_overrides import (
 from .html_renderer import render_html
 from .models import Plan, RenderContext
 from .pdf_renderer import PdfRenderError, render_pdf
-from .plan_loader import PlanParseError, load_plan
+from .plan_loader import (
+    PlanParseError,
+    enrich_courses_from_catalogue,
+    load_catalogue,
+    merge_catalogue_overrides,
+    load_plan,
+)
 from .metadata_resolver import MetadataSource, RuleResolutionError, resolve_metadata
 from .render_tokens import TokenExpansionError
 from .timeline import TimelineError, build_year_layouts
@@ -103,6 +109,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Date token value in YYYY-mm-dd format (defaults to today)",
     )
     parser.add_argument("--formats", type=_parse_formats, default={"html", "pdf"})
+    parser.add_argument(
+        "--catalogue",
+        type=Path,
+        default=None,
+        help="Catalogue JSON file used to fill in missing course titles and UoC",
+    )
+    parser.add_argument(
+        "--catalogue-overrides",
+        type=Path,
+        default=None,
+        help="Catalogue overrides JSON file that supplements or updates the base catalogue",
+    )
     return parser
 
 
@@ -186,6 +204,7 @@ def _render_single_plan(
     datestamp: str,
     metadata_source: MetadataSource,
     metadata_map: Path | None,
+    catalogue: dict[str, dict[str, object]] | None = None,
 ) -> None:
     """Render a single plan file to the specified formats (HTML/PDF).
 
@@ -199,6 +218,10 @@ def _render_single_plan(
         formats: Set of formats to render (html, pdf).
     """
     plan = load_plan(plan_file)
+    if catalogue is not None:
+        enriched_courses = enrich_courses_from_catalogue(plan.courses, catalogue)
+        if enriched_courses is not plan.courses:
+            plan = dataclasses.replace(plan, courses=enriched_courses)
     identity, rule_metadata = resolve_metadata(
         plan=plan,
         source=metadata_source,
@@ -286,6 +309,23 @@ def main(argv: list[str] | None = None) -> int:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
+    catalogue: dict[str, dict[str, object]] | None = None
+    if args.catalogue is not None:
+        try:
+            catalogue = load_catalogue(args.catalogue)
+        except PlanParseError as exc:
+            print(f"FAIL: --catalogue {args.catalogue} -> {exc}", file=sys.stderr)
+            return 1
+        if args.catalogue_overrides is not None:
+            try:
+                merge_catalogue_overrides(catalogue, args.catalogue_overrides)
+            except PlanParseError as exc:
+                print(
+                    f"FAIL: --catalogue-overrides {args.catalogue_overrides} -> {exc}",
+                    file=sys.stderr,
+                )
+                return 1
+
     failures: list[PlanFailure] = []
     successes = 0
 
@@ -302,6 +342,7 @@ def main(argv: list[str] | None = None) -> int:
                 datestamp=datestamp,
                 metadata_source=metadata_source,
                 metadata_map=args.metadata_map,
+                catalogue=catalogue,
             )
             successes += 1
             print(f"OK: {plan_file}")

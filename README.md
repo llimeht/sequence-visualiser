@@ -65,6 +65,15 @@ sequence-visualiser plans/CEIC/CEICAH3707_2026_T1.json \
   --output-dir output --formats both
 ```
 
+Plans that have missing titles or UoC for courses can have these data filled in using the same
+catalogue files as used by the `transition-checker`. For example:
+
+```bash
+sequence-visualiser plans/CEIC/CEICAH3707_2026_T1.json \
+    --catalogue plans/catalogue.json \
+    --catalogue-overrides plans/CEIC/catalogue_overrides.json
+```
+
 ### CLI options
 
 - Positional:
