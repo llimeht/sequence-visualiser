@@ -147,7 +147,7 @@ def load_catalogue(catalogue_path: Path) -> dict[str, dict[str, Any]]:
         )
 
     catalogue: dict[str, dict[str, Any]] = {}
-    for index, entry in enumerate(cast(list[Any], payload), start=1):
+    for index, entry in enumerate(cast(list[Any], payload), start=1):  # type: ignore[redundant-cast]
         if not isinstance(entry, Mapping):
             raise PlanParseError(
                 f"Invalid entry at index {index} in catalogue {catalogue_path}: must be an object"
@@ -200,7 +200,7 @@ def merge_catalogue_overrides(
             f"Catalogue overrides file {overrides_path} must contain a JSON array at the top level"
         )
 
-    for index, entry in enumerate(cast(list[Any], payload), start=1):
+    for index, entry in enumerate(cast(list[Any], payload), start=1):  # type: ignore[redundant-cast]
         if not isinstance(entry, Mapping):
             raise PlanParseError(
                 f"Invalid entry at index {index} in catalogue overrides {overrides_path}: "

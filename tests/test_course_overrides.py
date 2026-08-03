@@ -194,7 +194,7 @@ def test_load_course_overrides_split_files_overlay_in_order(tmp_path: Path) -> N
     try:
         overrides = load_course_overrides(config_dir, local_dir)
     finally:
-        co.logger.warning = original_warning  # type: ignore[assignment]
+        co.logger.warning = original_warning  # type: ignore[method-assign]
 
     assert overrides["FLEX-A"]["code"] == "MMAN1130"
     assert overrides["FLEX-A"]["title"] == "Engineering Mechanics"
@@ -227,7 +227,7 @@ def test_load_course_overrides_warns_on_duplicate_keys(tmp_path: Path) -> None:
     try:
         overrides = load_course_overrides(config_dir)
     finally:
-        co.logger.warning = original_warning  # type: ignore[assignment]
+        co.logger.warning = original_warning  # type: ignore[method-assign]
 
     assert overrides["FLEX-A"]["code"] == "MATH1131"
     assert overrides["FLEX-A"]["title"] == "Mathematics 1A"

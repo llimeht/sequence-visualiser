@@ -154,7 +154,7 @@ def _load_file(path: Path) -> dict[str, dict[str, str]]:
                         f"Entry value for {raw_key!r}.{field} in {path} must be a JSON array of strings"
                     )
                 aliases: list[str] = []
-                for index, alias_value in enumerate(cast(list[Any], field_value)):
+                for index, alias_value in enumerate(cast(list[Any], field_value)):  # type: ignore[redundant-cast]
                     if not isinstance(alias_value, str):
                         raise CourseOverrideError(
                             f"Entry value for {raw_key!r}.{field}[{index}] in {path} must be a string"
