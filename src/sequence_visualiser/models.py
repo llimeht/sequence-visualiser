@@ -16,6 +16,10 @@ def _empty_str_list() -> list[str]:
     return []
 
 
+def _empty_course_overrides() -> dict[str, dict[str, Any]]:
+    return {}
+
+
 @dataclass(frozen=True)
 class Course:
     """Represents a single course in a plan."""
@@ -91,3 +95,6 @@ class RenderContext:
     specialisation_code: str
     degree_code: str
     specialisation_codes: list[str] = field(default_factory=_empty_str_list)
+    course_overrides: dict[str, dict[str, Any]] = field(
+        default_factory=_empty_course_overrides
+    )

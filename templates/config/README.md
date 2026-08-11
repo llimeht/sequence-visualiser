@@ -59,3 +59,43 @@ Configured PDF text values are rendered using Jinja syntax (`{{ ... }}` and `{% 
 - Use `tokens.*` values (for example `{{ tokens.date }}` or `{{ tokens.program_name }}`).
 - Enable an optional second PDF page with `pdf.second_page.enabled`.
 - `pdf.second_page.info_box_title`, `pdf.second_page.info_box_text`, and `pdf.second_page.bottom_disclaimer` control page-2 content.
+
+## Course handbook links
+
+Both HTML and PDF course grids can generate handbook links per course.
+
+- `html.course_link_template`: Jinja template used for each course link in HTML output.
+- `pdf.course_link_template`: Jinja template used for each course link in PDF output.
+
+Available template variables include:
+
+- `career`: plan career value (for example `undergraduate`; use `career | lower` to force lowercase)
+- `code`: course code (for example `MATH1131`)
+- `title`: course title
+- `uoc`: numeric UoC value
+- `display_title`: rendered title text including optional UoC suffix
+
+Example:
+
+- `https://handbook.example.org/{{ career }}/courses/current/{{ code }}`
+
+Link styling is configurable separately from long-form disclaimer/footer links:
+
+- `html.course_link_style`: supports `underline` and `colour`/`color`.
+- `pdf.course_link_style`: supports `underline` and `colour`/`color`.
+
+If no course link template is set, no grid course links are generated.
+
+### Per-course override control (`course-overrides*.json`)
+
+Course override entries support an optional `handbook_link` field to control whether
+grid links are emitted for that course.
+
+- Omitted, `false`, `null`, or empty string: no course grid link.
+- `true`: generate the normal link from `html.course_link_template` / `pdf.course_link_template`.
+- String starting with `http://` or `https://`: use that explicit URL directly.
+
+String values are trimmed before evaluation.
+
+If `handbook_link` is present but neither `true` nor a valid explicit `http(s)` URL,
+the renderer logs a warning and treats it as disabled (no link).

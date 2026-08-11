@@ -7,9 +7,18 @@
   "html": {
     "title": "Enrolment Sequence",
     "heading": "Enrolment Sequence",
+    "course_link_template": "https://handbook.example.org/{{ career }}/courses/current/{{ code }}",
+    "course_link_style": {
+      "underline": false,
+      "colour": "currentColor"
+    },
     "top_disclaimer": "Intended as a guide only. Courses do not need to be studied in the exact structure that they appear here. Please consult the handbook for term offerings and prerequisite information before deviating from the recommended sequence. Most courses do not run in all terms."
   },
   "pdf": {
+    "course_link_template": "https://handbook.example.org/{{ career }}/courses/current/{{ code }}",
+    "course_link_style": {
+      "underline": false
+    },
     "top_disclaimer": "Intended as a guide only. Courses do not need to be studied in the exact structure that they appear here. Please consult the handbook for term offerings and prerequisite information before deviating from the recommended sequence. Most courses do not run in all terms.",
     "footer_left": "Check the Handbook and Class Timetable for details.",
     "footer_right": "Information correct as at {{ tokens.date }}\nCopyright © {{ tokens.year }} {{ tokens.university_name }}",

@@ -44,12 +44,28 @@
           <table>
             <tbody>
               {% for course in period.courses %}
+              {% set course_link = course_link_for(course) %}
               <tr>
-                <td class="code">{{ course.code }}</td>
+                <td class="code">
+                  {% if course_link %}
+                  <a class="course-link" href="{{ course_link | e }}">{{ course.code }}</a>
+                  {% else %}
+                  {{ course.code }}
+                  {% endif %}
+                </td>
                 <td>
+                  {% if course_link %}
+                  <a class="course-link" href="{{ course_link | e }}">
                   {{ course.title }}
                   {% if course.uoc != 6 %}
                     <span class="uoc">({{ course.uoc }} UoC)</span>
+                  {% endif %}
+                  </a>
+                  {% else %}
+                  {{ course.title }}
+                  {% if course.uoc != 6 %}
+                    <span class="uoc">({{ course.uoc }} UoC)</span>
+                  {% endif %}
                   {% endif %}
                 </td>
               </tr>

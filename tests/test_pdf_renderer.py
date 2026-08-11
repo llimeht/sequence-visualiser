@@ -706,6 +706,141 @@ def test_render_pdf_does_not_link_or_underline_space_before_link(
     assert len(matching) == 1
 
 
+def test_render_pdf_course_grid_links_code_and_display_title(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=0,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "course_link_template": "https://handbook.example.org/{{ career }}/courses/current/{{ code }}",
+                "course_link_style": {"underline": True, "colour": "#cc0000"},
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+
+    expected_url = "https://handbook.example.org/Undergraduate/courses/current/MATH1131"
+    matching = [
+        (url, rect)
+        for url, rect, _relative in fake.link_url_calls
+        if url == expected_url
+    ]
+    assert len(matching) == 2
+    assert "Math (0 UoC)" in fake.drawn_strings
+    assert len(fake.line_calls) >= 2
+
+
+def test_render_pdf_course_grid_uses_explicit_handbook_link_override(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="FLEX-A",
+        title="Placeholder",
+        uoc=0,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "course_link_template": "https://handbook.example.org/{{ career }}/courses/current/{{ code }}",
+                "course_link_style": {"underline": True, "colour": "#cc0000"},
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+        course_overrides={"FLEX-A": {"handbook_link": " https://example.edu/custom "}},
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+
+    expected_url = "https://example.edu/custom"
+    matching = [
+        (url, rect)
+        for url, rect, _relative in fake.link_url_calls
+        if url == expected_url
+    ]
+    assert len(matching) == 2
+
+
 def test_render_pdf_footer_page_tokens_are_expanded(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:

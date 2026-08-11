@@ -27,6 +27,12 @@ class CourseOverrideError(ValueError):
 
 _NAMESPACE_SEPARATOR = "::"
 _ALIASES_FIELD = "aliases"
+_HANDBOOK_LINK_FIELD = "handbook_link"
+_OVERRIDE_CODE_FIELD = "code"
+_OVERRIDE_TITLE_FIELD = "title"
+
+CourseOverrideEntry = dict[str, Any]
+CourseOverrides = dict[str, CourseOverrideEntry]
 
 
 def _normalise_override_key(key: str) -> str:
@@ -35,10 +41,10 @@ def _normalise_override_key(key: str) -> str:
 
 
 def _expand_aliases(
-    entries: dict[str, dict[str, str]],
+    entries: CourseOverrides,
     aliases_by_key: dict[str, list[str]],
     path: Path,
-) -> dict[str, dict[str, str]]:
+) -> CourseOverrides:
     """Expand alias keys into the override map with collision protection."""
     expanded = dict(entries)
     explicit_keys = set(entries)
@@ -92,9 +98,9 @@ def _build_override_lookup_keys(
 
 def resolve_course_override(
     course_code: str,
-    overrides: dict[str, dict[str, str]],
+    overrides: CourseOverrides,
     namespace_candidates: list[str] | None = None,
-) -> dict[str, str] | None:
+) -> CourseOverrideEntry | None:
     """Resolve an override entry for a course code with namespace fallbacks."""
     for key in _build_override_lookup_keys(course_code, namespace_candidates):
         entry = overrides.get(key)
@@ -105,14 +111,14 @@ def resolve_course_override(
 
 def has_course_override(
     course_code: str,
-    overrides: dict[str, dict[str, str]],
+    overrides: CourseOverrides,
     namespace_candidates: list[str] | None = None,
 ) -> bool:
     """Return True when any override entry applies to a course code."""
     return resolve_course_override(course_code, overrides, namespace_candidates) is not None
 
 
-def _load_file(path: Path) -> dict[str, dict[str, str]]:
+def _load_file(path: Path) -> CourseOverrides:
     """Load and validate a course-overrides JSON file.
 
     Args:
@@ -132,7 +138,7 @@ def _load_file(path: Path) -> dict[str, dict[str, str]]:
     typed_data = {
         str(key): value for key, value in cast(Mapping[object, Any], data).items()
     }
-    result: dict[str, dict[str, str]] = {}
+    result: CourseOverrides = {}
     aliases_by_key: dict[str, list[str]] = {}
     for raw_key, value in typed_data.items():
         if raw_key.startswith("_"):
@@ -141,7 +147,7 @@ def _load_file(path: Path) -> dict[str, dict[str, str]]:
             raise CourseOverrideError(
                 f"Entry for {raw_key!r} in {path} must be a JSON object"
             )
-        entry: dict[str, str] = {}
+        entry: CourseOverrideEntry = {}
         key = _normalise_override_key(raw_key)
         for field, field_value in cast(Mapping[object, Any], value).items():
             if not isinstance(field, str):
@@ -162,6 +168,16 @@ def _load_file(path: Path) -> dict[str, dict[str, str]]:
                     if alias_value.strip():
                         aliases.append(alias_value)
                 aliases_by_key[key] = aliases
+                continue
+            if field in {_OVERRIDE_CODE_FIELD, _OVERRIDE_TITLE_FIELD}:
+                if not isinstance(field_value, str):
+                    raise CourseOverrideError(
+                        f"Entry value for {raw_key!r}.{field} in {path} must be a string"
+                    )
+                entry[field] = field_value
+                continue
+            if field == _HANDBOOK_LINK_FIELD:
+                entry[field] = field_value
                 continue
             if not isinstance(field_value, str):
                 raise CourseOverrideError(
@@ -199,7 +215,7 @@ def _iter_override_files(config_dir: Path) -> list[Path]:
 def load_course_overrides(
     config_dir: Path,
     local_config_dir: Path | None = None,
-) -> dict[str, dict[str, str]]:
+) -> CourseOverrides:
     """Load course override files, optionally overlaid with local files.
 
     Canonical entries are loaded from ``config_dir`` using this order:
@@ -211,7 +227,7 @@ def load_course_overrides(
 
     All keys are normalised to uppercase so matching is case-insensitive.
     """
-    overrides: dict[str, dict[str, str]] = {}
+    overrides: CourseOverrides = {}
     key_sources: dict[str, Path] = {}
     duplicate_chains: dict[str, list[Path]] = {}
 
@@ -247,7 +263,7 @@ def load_course_overrides(
 
 def apply_course_overrides(
     courses: list[Course],
-    overrides: dict[str, dict[str, str]],
+    overrides: CourseOverrides,
     namespace_candidates: list[str] | None = None,
 ) -> list[Course]:
     """Return a new list with any matching courses substituted.
@@ -272,10 +288,16 @@ def apply_course_overrides(
         if entry is None:
             result.append(course)
         else:
+            override_code = entry.get("code", course.code)
+            override_title = entry.get("title", course.title)
             patched = dataclasses.replace(
                 course,
-                code=entry.get("code", course.code),
-                title=entry.get("title", course.title),
+                code=override_code if isinstance(override_code, str) else course.code,
+                title=(
+                    override_title
+                    if isinstance(override_title, str)
+                    else course.title
+                ),
             )
             if not patched.code.strip() and not patched.title.strip():
                 continue

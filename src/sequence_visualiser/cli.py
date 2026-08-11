@@ -276,6 +276,7 @@ def _render_single_plan(
         specialisation_code=identity.specialisation_code,
         degree_code=identity.degree_code,
         specialisation_codes=identity.specialisation_codes,
+        course_overrides=course_overrides,
     )
 
     if "html" in formats:

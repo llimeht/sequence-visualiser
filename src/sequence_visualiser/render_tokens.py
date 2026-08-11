@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Mapping
 from datetime import date
 from typing import cast
+from urllib.parse import urlparse
 
-from .models import RenderContext
+from jinja2 import Environment, StrictUndefined
+
+from .course_overrides import resolve_course_override
+from .models import Course, RenderContext
+
+
+logger = logging.getLogger(__name__)
+_ALLOWED_COURSE_LINK_SCHEMES = frozenset({"http", "https"})
+_CANONICAL_COURSE_CODE_PATTERN = re.compile(r"^[A-Z]{4}\d{4}$")
 
 
 class TokenExpansionError(ValueError):
@@ -102,3 +112,140 @@ def expand_runtime_tokens(
 ) -> str:
     """Expand shared runtime and branding tokens from render context."""
     return expand_tokens_with_values(text, runtime_token_values(context, university_name))
+
+
+def _safe_course_link_or_none(url: str) -> str | None:
+    parsed = urlparse(url)
+    scheme = parsed.scheme.lower()
+    if scheme not in _ALLOWED_COURSE_LINK_SCHEMES:
+        return None
+    if not parsed.netloc:
+        return None
+    return url
+
+
+def render_course_link_url(
+    template_text: str,
+    *,
+    context: RenderContext,
+    course: Course,
+    tokens: Mapping[str, str],
+) -> str | None:
+    """Render and validate a per-course handbook URL from a Jinja template."""
+    if not template_text.strip():
+        return None
+
+    display_title = (
+        course.title if course.uoc == 6 else f"{course.title} ({course.uoc} UoC)"
+    )
+    template_context: dict[str, object] = {
+        "plan": context.plan,
+        "course": course,
+        "rule": context.rule_metadata,
+        "years": context.years,
+        "tweaks": context.tweaks,
+        "tokens": dict(tokens),
+        "career": context.plan.career,
+        "code": course.code,
+        "title": course.title,
+        "uoc": course.uoc,
+        "display_title": display_title,
+        "plan_code": context.plan_code,
+        "program_code": context.rule_metadata.program_id or context.degree_code,
+        "specialisation_code": context.specialisation_code,
+        "degree_code": context.degree_code,
+    }
+
+    env = Environment(autoescape=False, undefined=StrictUndefined)
+    try:
+        rendered = env.from_string(template_text).render(**template_context)
+    except Exception as exc:  # pragma: no cover - depends on Jinja internals.
+        raise TokenExpansionError(f"Invalid course link template: {exc}") from exc
+
+    url = str(rendered).strip()
+    if not url:
+        return None
+
+    safe_url = _safe_course_link_or_none(url)
+    if safe_url is None:
+        logger.warning(
+            "Course link URL omitted for %s due to unsupported URL: %s",
+            course.code,
+            url,
+        )
+        return None
+    return safe_url
+
+
+def _override_namespace_candidates(context: RenderContext) -> list[str]:
+    return [
+        context.plan_code,
+        *context.specialisation_codes,
+        context.degree_code,
+    ]
+
+
+def resolve_course_handbook_link(
+    template_text: str,
+    *,
+    context: RenderContext,
+    course: Course,
+    tokens: Mapping[str, str],
+) -> str | None:
+    """Resolve handbook link URL using override semantics and fallback rules."""
+    override_entry = resolve_course_override(
+        course.code,
+        context.course_overrides,
+        namespace_candidates=_override_namespace_candidates(context),
+    )
+
+    if override_entry is not None:
+        raw_override_value = override_entry.get("handbook_link")
+        if raw_override_value is True:
+            return render_course_link_url(
+                template_text,
+                context=context,
+                course=course,
+                tokens=tokens,
+            )
+        if isinstance(raw_override_value, str):
+            explicit_url = raw_override_value.strip()
+            if not explicit_url:
+                return None
+            if explicit_url.startswith(("http://", "https://")):
+                safe_url = _safe_course_link_or_none(explicit_url)
+                if safe_url is not None:
+                    return safe_url
+                logger.warning(
+                    "Course link override ignored for %s due to invalid explicit URL: %s",
+                    course.code,
+                    explicit_url,
+                )
+                return None
+            logger.warning(
+                "Course link override for %s must be true or a valid http(s) URL; received: %s",
+                course.code,
+                explicit_url,
+            )
+            return None
+        if raw_override_value:
+            logger.warning(
+                "Course link override for %s must be true or a valid http(s) URL; received type %s",
+                course.code,
+                type(raw_override_value).__name__,
+            )
+            return None
+        return None
+
+    if not template_text.strip():
+        return None
+
+    if not _CANONICAL_COURSE_CODE_PATTERN.fullmatch(course.code.strip().upper()):
+        return None
+
+    return render_course_link_url(
+        template_text,
+        context=context,
+        course=course,
+        tokens=tokens,
+    )

@@ -9,10 +9,12 @@ from sequence_visualiser.plan_loader import load_plan
 from sequence_visualiser.render_tokens import (
     TokenExpansionError,
     expand_runtime_tokens,
+    resolve_course_handbook_link,
+    render_course_link_url,
     runtime_token_values,
 )
 from sequence_visualiser.timeline import build_year_layouts
-from sequence_visualiser.models import RenderContext
+from sequence_visualiser.models import Course, Plan, RenderContext, RuleMetadata
 
 
 HTML_TEMPLATE = """<!doctype html><html><body>{% for year in years %}<details class=\"year\" open><summary>{{ year.enrol_year }}</summary></details>{% endfor %}</body></html>"""
@@ -298,6 +300,314 @@ def test_html_long_form_markup_renders_only_in_long_form(tmp_path: Path) -> None
         'Contact <a href="https://example.edu">The Nucleus</a> today' in html
     )
     assert "<strong>Math</strong>" not in html
+
+
+def test_html_course_grid_links_include_title_and_uoc_suffix(tmp_path: Path) -> None:
+    templates_dir = tmp_path / "templates"
+    (templates_dir / "config").mkdir(parents=True)
+    local_overrides = tmp_path / "template-overrides" / "config"
+    local_overrides.mkdir(parents=True)
+    (templates_dir / "config" / "defaults.json").write_text(
+        '{"html":{"course_link_template":"https://handbook.example.org/{{ career }}/courses/current/{{ code }}"}}',
+        encoding="utf-8",
+    )
+    (templates_dir / "sequence.html.j2").write_text(
+        """<!doctype html><html><body><table><tbody>{% for year in years %}{% for period in year.periods %}{% for course in period.courses %}{% set course_link = course_link_for(course) %}<tr><td class=\"code\">{% if course_link %}<a class=\"course-link\" href=\"{{ course_link | e }}\">{{ course.code }}</a>{% else %}{{ course.code }}{% endif %}</td><td>{% if course_link %}<a class=\"course-link\" href=\"{{ course_link | e }}\">{{ course.title }}{% if course.uoc != 6 %} <span class=\"uoc\">({{ course.uoc }} UoC)</span>{% endif %}</a>{% else %}{{ course.title }}{% endif %}</td></tr>{% endfor %}{% endfor %}{% endfor %}</tbody></table></body></html>""",
+        encoding="utf-8",
+    )
+
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    plan.write_text(
+        """
+        {
+          "sheet": "CEICAH3707",
+          "program": "CEICAH3707",
+          "career": "Undergraduate",
+          "uoc": 192,
+          "intake": "2026 T1",
+          "plan_description": "Flex",
+          "courses": [
+            {"enrol_year": "Year 1", "year": 2026, "period": "Term 1", "course_n": "Course 1", "code": "MATH1131", "title": "Math", "uoc": 0, "prerequisites": "."}
+          ]
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "out"
+    rc = main(
+        [
+            str(plan),
+            "--output-dir",
+            str(output_dir),
+            "--rules-dir",
+            str(rules_dir),
+            "--templates-dir",
+            str(templates_dir),
+            "--config-dir",
+            str(templates_dir / "config"),
+            "--template-overrides-dir",
+            str(local_overrides),
+            "--metadata-source",
+            "rules",
+            "--formats",
+            "html",
+        ]
+    )
+
+    assert rc == 0
+    html = (output_dir / "CEICAH3707_2026_T1.html").read_text(encoding="utf-8")
+    expected_url = "https://handbook.example.org/Undergraduate/courses/current/MATH1131"
+    assert html.count(f'href="{expected_url}"') == 2
+    assert 'Math <span class="uoc">(0 UoC)</span></a>' in html
+
+
+def test_render_course_link_url_uses_career_and_code_from_context(tmp_path: Path) -> None:
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan(plan, "Term 1")
+    loaded_plan = load_plan(plan)
+    identity, metadata = resolve_rule_metadata(loaded_plan, rules_dir)
+    context = RenderContext(
+        plan=loaded_plan,
+        rule_metadata=metadata,
+        tweaks={"runtime": {"date": "2026-05-28", "year": "2026"}},
+        years=build_year_layouts(loaded_plan),
+        plan_code=identity.plan_code,
+        specialisation_code=identity.specialisation_code,
+        degree_code=identity.degree_code,
+        specialisation_codes=identity.specialisation_codes,
+    )
+    tokens = runtime_token_values(context, "Test Uni")
+    course = loaded_plan.courses[0]
+
+    rendered = render_course_link_url(
+        "https://handbook.example.org/{{ career }}/courses/current/{{ code }}",
+        context=context,
+        course=course,
+        tokens=tokens,
+    )
+
+    assert rendered == "https://handbook.example.org/Undergraduate/courses/current/MATH1131"
+
+
+def test_resolve_course_handbook_link_uses_explicit_override_url(tmp_path: Path) -> None:
+    course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="FLEX-A",
+        title="Placeholder",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[course],
+            source_path=tmp_path / "plan.json",
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/CEICAH3707-2026-2029.json"),
+            program_name="BE(Hons)",
+            specialisation_names=["Chemical Engineering"],
+            validity_from="2026",
+            validity_to="2029",
+        ),
+        tweaks={},
+        years=[],
+        plan_code="CEICAH3707",
+        specialisation_code="3707",
+        degree_code="3707",
+        course_overrides={"FLEX-A": {"handbook_link": " https://example.edu/custom "}},
+    )
+
+    resolved = resolve_course_handbook_link(
+        "https://handbook.example.org/{{ career }}/courses/current/{{ code }}",
+        context=context,
+        course=course,
+        tokens=runtime_token_values(context, "Test Uni"),
+    )
+
+    assert resolved == "https://example.edu/custom"
+
+
+def test_resolve_course_handbook_link_true_falls_back_to_template(tmp_path: Path) -> None:
+    course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="FLEX-A",
+        title="Placeholder",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[course],
+            source_path=tmp_path / "plan.json",
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/CEICAH3707-2026-2029.json"),
+            program_name="BE(Hons)",
+            specialisation_names=["Chemical Engineering"],
+            validity_from="2026",
+            validity_to="2029",
+        ),
+        tweaks={},
+        years=[],
+        plan_code="CEICAH3707",
+        specialisation_code="3707",
+        degree_code="3707",
+        course_overrides={"FLEX-A": {"handbook_link": True}},
+    )
+
+    resolved = resolve_course_handbook_link(
+        "https://handbook.example.org/{{ career }}/courses/current/{{ code }}",
+        context=context,
+        course=course,
+        tokens=runtime_token_values(context, "Test Uni"),
+    )
+
+    assert resolved == "https://handbook.example.org/Undergraduate/courses/current/FLEX-A"
+
+
+def test_resolve_course_handbook_link_warns_and_disables_invalid_override_value(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="FLEX-A",
+        title="Placeholder",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[course],
+            source_path=tmp_path / "plan.json",
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/CEICAH3707-2026-2029.json"),
+            program_name="BE(Hons)",
+            specialisation_names=["Chemical Engineering"],
+            validity_from="2026",
+            validity_to="2029",
+        ),
+        tweaks={},
+        years=[],
+        plan_code="CEICAH3707",
+        specialisation_code="3707",
+        degree_code="3707",
+        course_overrides={"FLEX-A": {"handbook_link": "true"}},
+    )
+
+    warnings: list[str] = []
+
+    def _capture_warning(msg: str, *args: object, **kwargs: object) -> None:
+        _ = kwargs
+        warnings.append(msg % args)
+
+    monkeypatch.setattr("sequence_visualiser.render_tokens.logger.warning", _capture_warning)
+
+    resolved = resolve_course_handbook_link(
+        "https://handbook.example.org/{{ career }}/courses/current/{{ code }}",
+        context=context,
+        course=course,
+        tokens=runtime_token_values(context, "Test Uni"),
+    )
+
+    assert resolved is None
+    assert any("must be true or a valid http(s) URL" in warning for warning in warnings)
+
+
+def test_resolve_course_handbook_link_unlinks_noncanonical_without_override(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="FLEX-A",
+        title="Placeholder",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[course],
+            source_path=tmp_path / "plan.json",
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/CEICAH3707-2026-2029.json"),
+            program_name="BE(Hons)",
+            specialisation_names=["Chemical Engineering"],
+            validity_from="2026",
+            validity_to="2029",
+        ),
+        tweaks={},
+        years=[],
+        plan_code="CEICAH3707",
+        specialisation_code="3707",
+        degree_code="3707",
+        course_overrides={},
+    )
+
+    warnings: list[str] = []
+
+    def _capture_warning(msg: str, *args: object, **kwargs: object) -> None:
+        _ = kwargs
+        warnings.append(msg % args)
+
+    monkeypatch.setattr("sequence_visualiser.render_tokens.logger.warning", _capture_warning)
+
+    resolved = resolve_course_handbook_link(
+        "https://handbook.example.org/{{ career }}/courses/current/{{ code }}",
+        context=context,
+        course=course,
+        tokens=runtime_token_values(context, "Test Uni"),
+    )
+
+    assert resolved is None
+    assert warnings == []
 
 
 def test_html_long_form_unclosed_bold_tag_logs_warning(

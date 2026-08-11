@@ -25,6 +25,8 @@
     --period-winter-term: {{ css_variables.get("period-winter-term", "#dff1ff") }};
     --link-colour: {{ css_variables.get("link-colour", css_variables.get("link-color", "var(--accent)")) }};
     --link-underline: {{ css_variables.get("link-underline", "underline") }};
+    --course-link-colour: {{ css_variables.get("course-link-colour", "currentColor") }};
+    --course-link-underline: {{ css_variables.get("course-link-underline", "none") }};
   }
   body {
     margin: 0;
@@ -106,6 +108,14 @@
     font-family: "JetBrains Mono", "Consolas", monospace;
   }
   .uoc { color: #355574; font-size: 0.9rem; }
+  .course-link {
+    color: var(--course-link-colour);
+    text-decoration-line: var(--course-link-underline);
+    text-underline-offset: 2px;
+  }
+  .course-link:hover {
+    color: var(--course-link-colour);
+  }
   @media (max-width: 760px) {
     td.code { width: 135px; }
     .period h3 { font-size: 0.95rem; }

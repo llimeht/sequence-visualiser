@@ -23,7 +23,7 @@ from reportlab.pdfbase.ttfonts import TTFont, TTFError
 from reportlab.pdfgen import canvas
 
 from .models import Course, RenderContext, YearLayout
-from .render_tokens import runtime_token_values
+from .render_tokens import resolve_course_handbook_link, runtime_token_values
 from .text_markup import TextRun, parse_inline_markup_with_warnings
 from .timeline import CALENDAR_MODELS
 
@@ -1234,6 +1234,62 @@ def _pdf_link_style(pdf_tweaks: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _pdf_course_link_style(pdf_tweaks: Mapping[str, Any]) -> dict[str, Any]:
+    """Resolve link styling options for PDF course grid links."""
+    link_style = _colour_mapping(pdf_tweaks, "course_link_style")
+    configured_colour: object | None = link_style.get("colour")
+    if configured_colour is None:
+        configured_colour = link_style.get("color")
+
+    resolved_colour: object | None = None
+    if configured_colour is not None:
+        resolved_colour = _to_color(configured_colour, colors.black)
+
+    return {
+        "underline": _bool_config(link_style.get("underline")),
+        "colour": resolved_colour,
+    }
+
+
+def _draw_linked_text(
+    c: canvas.Canvas,
+    *,
+    text: str,
+    x: float,
+    y: float,
+    font_name: str,
+    font_size: int,
+    link_url: str | None,
+    link_style: Mapping[str, Any],
+) -> float:
+    """Draw text and optional link annotation, returning rendered text width."""
+    c.setFont(font_name, font_size)
+    link_underline = bool(link_style.get("underline", False))
+    link_colour = link_style.get("colour")
+    if link_url and link_colour is not None:
+        c.setFillColor(link_colour)
+
+    c.drawString(x, y, text)
+    width: float = pdfmetrics.stringWidth(text, font_name, font_size)
+    if link_url:
+        _canvas_link_url(
+            c,
+            url=link_url,
+            rect=(x, y - 1, x + width, y + font_size),
+        )
+        if link_underline:
+            _canvas_line(
+                c,
+                x1=x,
+                y1=y - 1,
+                x2=x + width,
+                y2=y - 1,
+            )
+        if link_colour is not None:
+            c.setFillColor(colors.black)
+    return width
+
+
 def _draw_second_page_content(
     c: canvas.Canvas,
     *,
@@ -1392,12 +1448,14 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
     branding = _colour_mapping(context.tweaks, "branding")
     pdf_tweaks = _colour_mapping(context.tweaks, "pdf")
     link_style = _pdf_link_style(pdf_tweaks)
+    course_link_style = _pdf_course_link_style(pdf_tweaks)
     colours_tweaks = _colour_mapping(pdf_tweaks, "colours")
     fonts = _font_roles(pdf_tweaks, templates_dir)
     university_name = str(branding.get("university_name", ""))
     if not university_name:
         university_name = "University"
     tokens = runtime_token_values(context, university_name)
+    course_link_template = str(pdf_tweaks.get("course_link_template", ""))
     template_env = Environment(autoescape=False, undefined=StrictUndefined)
     template_context = _pdf_template_context(context, university_name, tokens)
 
@@ -1574,9 +1632,23 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
             text_y = period_box_top - PERIOD_TEXT_TOP_PADDING
             for course in courses:
                 code, title = _display_course(course)
+                course_link = resolve_course_handbook_link(
+                    course_link_template,
+                    context=context,
+                    course=course,
+                    tokens=tokens,
+                )
                 code_field = _course_code_field(code)
-                c.setFont(cast(str, fonts["course_codes_regular"]), CODE_FONT_SIZE)
-                c.drawString(x + 3, text_y, code_field)
+                _draw_linked_text(
+                    c,
+                    text=code_field,
+                    x=x + 3,
+                    y=text_y,
+                    font_name=cast(str, fonts["course_codes_regular"]),
+                    font_size=CODE_FONT_SIZE,
+                    link_url=course_link,
+                    link_style=course_link_style,
+                )
 
                 code_width = pdfmetrics.stringWidth(
                     " " * COURSE_CODE_CHARS,
@@ -1592,8 +1664,16 @@ def render_pdf(context: RenderContext, output_path: Path, templates_dir: Path) -
                     max_title_width,
                     cast(str, fonts["body_regular"]),
                 )
-                c.setFont(cast(str, fonts["body_regular"]), title_size)
-                c.drawString(title_x, text_y, title)
+                _draw_linked_text(
+                    c,
+                    text=title,
+                    x=title_x,
+                    y=text_y,
+                    font_name=cast(str, fonts["body_regular"]),
+                    font_size=title_size,
+                    link_url=course_link,
+                    link_style=course_link_style,
+                )
                 text_y -= LINE_HEIGHT
                 if text_y < (period_box_bottom + PERIOD_TEXT_BOTTOM_PADDING):
                     break

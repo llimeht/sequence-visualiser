@@ -10,8 +10,12 @@ from urllib.parse import urlparse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
-from .models import RenderContext
-from .render_tokens import expand_runtime_tokens, runtime_token_values
+from .models import Course, RenderContext
+from .render_tokens import (
+    expand_runtime_tokens,
+    resolve_course_handbook_link,
+    runtime_token_values,
+)
 from .text_markup import parse_inline_markup_with_warnings
 
 logger = logging.getLogger(__name__)
@@ -116,6 +120,24 @@ def render_html(context: RenderContext, templates_dir: Path, output_path: Path) 
     footer = expand_runtime_tokens(
         str(html_mapping.get("footer", "")), context, university_name
     )
+    course_link_template = str(html_mapping.get("course_link_template", ""))
+
+    course_links: dict[Course, str] = {}
+    if course_link_template.strip():
+        for year in context.years:
+            for period in year.periods:
+                for course in period.courses:
+                    course_link = resolve_course_handbook_link(
+                        course_link_template,
+                        context=context,
+                        course=course,
+                        tokens=tokens,
+                    )
+                    if course_link:
+                        course_links[course] = course_link
+
+    def _course_link_for(course: Course) -> str | None:
+        return course_links.get(course)
 
     css_variables: dict[str, str] = {
         "period-term-1": "#f2f2f2",
@@ -161,6 +183,21 @@ def render_html(context: RenderContext, templates_dir: Path, output_path: Path) 
                 "underline" if configured_underline else "none"
             )
 
+    course_link_style = html_mapping.get("course_link_style")
+    if isinstance(course_link_style, dict):
+        course_link_style_mapping = cast(dict[str, object], course_link_style)
+        configured_course_colour = course_link_style_mapping.get("colour")
+        if configured_course_colour is None:
+            configured_course_colour = course_link_style_mapping.get("color")
+        if isinstance(configured_course_colour, str) and configured_course_colour.strip():
+            css_variables["course-link-colour"] = configured_course_colour.strip()
+
+        configured_course_underline = course_link_style_mapping.get("underline")
+        if isinstance(configured_course_underline, bool):
+            css_variables["course-link-underline"] = (
+                "underline" if configured_course_underline else "none"
+            )
+
     custom_css_variables = html_mapping.get("css_variables")
     if isinstance(custom_css_variables, dict):
         css_mapping = cast(dict[str, object], custom_css_variables)
@@ -193,6 +230,7 @@ def render_html(context: RenderContext, templates_dir: Path, output_path: Path) 
         else [],
         html_metadata=html_metadata,
         css_variables=css_variables,
+        course_link_for=_course_link_for,
     )
 
     output_path.write_text(html, encoding="utf-8")

@@ -318,3 +318,44 @@ def test_blank_override_removes_extended_period_pressure(tmp_path: Path) -> None
         "Term 2",
         "Term 3",
     ]
+
+
+def test_load_course_overrides_preserves_handbook_link_values(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "course-overrides.json").write_text(
+        """
+        {
+          "FLEX-A": {"code": "MATH1131", "title": "Math", "handbook_link": true},
+          "FLEX-B": {"code": "MATH1231", "title": "Math B", "handbook_link": " https://example.edu/custom "},
+          "FLEX-C": {"code": "MATH1241", "title": "Math C", "handbook_link": 123}
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    overrides = load_course_overrides(config_dir)
+
+    assert overrides["FLEX-A"]["handbook_link"] is True
+    assert overrides["FLEX-B"]["handbook_link"] == " https://example.edu/custom "
+    assert overrides["FLEX-C"]["handbook_link"] == 123
+
+
+def test_load_course_overrides_local_overlay_can_override_handbook_link(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    local_dir = tmp_path / "local-config"
+    local_dir.mkdir()
+
+    (config_dir / "course-overrides.json").write_text(
+        '{"FLEX-A": {"code": "MATH1131", "title": "Math", "handbook_link": true}}',
+        encoding="utf-8",
+    )
+    (local_dir / "course-overrides.json").write_text(
+        '{"FLEX-A": {"code": "MATH1131", "title": "Math", "handbook_link": "https://example.edu/override"}}',
+        encoding="utf-8",
+    )
+
+    overrides = load_course_overrides(config_dir, local_dir)
+
+    assert overrides["FLEX-A"]["handbook_link"] == "https://example.edu/override"
