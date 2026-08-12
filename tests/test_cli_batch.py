@@ -348,6 +348,57 @@ def test_html_long_form_markup_renders_only_in_long_form(tmp_path: Path) -> None
     assert "<strong>Math</strong>" not in html
 
 
+def test_html_long_form_normalises_multiline_separator_variants(tmp_path: Path) -> None:
+    templates_dir = tmp_path / "templates"
+    (templates_dir / "config").mkdir(parents=True)
+    local_overrides = tmp_path / "template-overrides" / "config"
+    local_overrides.mkdir(parents=True)
+    (templates_dir / "config" / "defaults.json").write_text(
+        '{"html":{"top_disclaimer":"Line A\\n \\nLine B\\n\\n\\nLine C\\nLine D","footer":"Footer 1\\n \\nFooter 2\\n\\n\\nFooter 3"}}',
+        encoding="utf-8",
+    )
+    (templates_dir / "sequence.html.j2").write_text(
+        """<!doctype html><html><body><section class=\"intro\"><div>{{ top_disclaimer_html }}</div></section><footer>{% for line in footer_lines_html %}<div>{{ line }}</div>{% endfor %}</footer></body></html>""",
+        encoding="utf-8",
+    )
+
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan(plan, "Term 1")
+
+    output_dir = tmp_path / "out"
+    rc = main(
+        [
+            str(plan),
+            "--output-dir",
+            str(output_dir),
+            "--rules-dir",
+            str(rules_dir),
+            "--templates-dir",
+            str(templates_dir),
+            "--config-dir",
+            str(templates_dir / "config"),
+            "--template-overrides-dir",
+            str(local_overrides),
+            "--metadata-source",
+            "rules",
+            "--formats",
+            "html",
+        ]
+    )
+
+    assert rc == 0
+    html = (output_dir / "CEICAH3707_2026_T1.html").read_text(encoding="utf-8")
+    assert "<p>Line A</p><p>Line B</p><p>Line C<br>Line D</p>" in html
+    assert html.count("<div></div>") == 2
+
+
 def test_html_course_grid_links_include_title_and_uoc_suffix(tmp_path: Path) -> None:
     templates_dir = tmp_path / "templates"
     (templates_dir / "config").mkdir(parents=True)

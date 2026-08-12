@@ -15,6 +15,7 @@ _ANCHOR_OPEN_TAG_PATTERN = re.compile(r"<\s*a\s+([^>]*)>", re.IGNORECASE)
 _ATTRIBUTE_PATTERN = re.compile(
     r"([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(\"[^\"]*\"|'[^']*')"
 )
+_BLANK_LINE_RUN_PATTERN = re.compile(r"\n(?:[ \t\f\v]*\n)+")
 _ALLOWED_URL_SCHEMES = frozenset({"http", "https", "mailto"})
 
 
@@ -181,6 +182,22 @@ def parse_inline_markup_with_warnings(text: str) -> ParsedInlineMarkup:
 def parse_inline_markup(text: str) -> list[TextRun]:
     """Parse limited inline markup; malformed markup is returned as plain text."""
     return parse_inline_markup_with_warnings(text).runs
+
+
+def normalise_multiline_text(text: str) -> str:
+    """Normalise newline separators for consistent paragraph and line-break rendering.
+
+    Rules:
+    - ``\n`` remains a single line break.
+    - Any blank-line separator run (``\n\n``, ``\n \n``, ``\n\n\n``, etc.)
+      collapses to exactly ``\n\n``.
+    - ``\r\n`` and ``\r`` are converted to ``\n``.
+    """
+    if not text:
+        return ""
+
+    normalised = text.replace("\r\n", "\n").replace("\r", "\n")
+    return _BLANK_LINE_RUN_PATTERN.sub("\n\n", normalised)
 
 
 def render_inline_markup_html(text: str) -> Markup:

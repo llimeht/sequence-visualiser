@@ -16,7 +16,7 @@ from .render_tokens import (
     resolve_course_handbook_link,
     runtime_token_values,
 )
-from .text_markup import parse_inline_markup_with_warnings
+from .text_markup import normalise_multiline_text, parse_inline_markup_with_warnings
 
 logger = logging.getLogger(__name__)
 _ALLOWED_HTML_LINK_SCHEMES = frozenset({"http", "https", "mailto"})
@@ -64,31 +64,54 @@ def _build_html_metadata(context: RenderContext, university_name: str) -> dict[s
     }
 
 
-def _render_long_form_html(text: str, *, field_name: str) -> Markup:
+def _render_long_form_html(
+    text: str,
+    *,
+    field_name: str,
+    paragraph_mode: bool = True,
+) -> Markup:
     """Render safe long-form HTML text with limited inline markup support."""
-    parsed = parse_inline_markup_with_warnings(text)
-    for warning in parsed.warnings:
-        logger.warning("HTML long-form markup warning in %s: %s", field_name, warning)
+    normalised = normalise_multiline_text(text)
+    if not normalised:
+        return Markup("")
 
-    output: list[str] = []
-    for run in parsed.runs:
-        escaped_text = str(Markup.escape(run.text))
-        safe_href = _safe_href_or_none(run.href)
-        if run.href and safe_href is None:
-            logger.warning(
-                "HTML long-form markup warning in %s: disallowed href omitted", field_name
-            )
+    paragraphs = (
+        [part for part in normalised.split("\n\n") if part]
+        if paragraph_mode
+        else [normalised]
+    )
+    paragraph_output: list[str] = []
+    for paragraph in paragraphs:
+        parsed = parse_inline_markup_with_warnings(paragraph)
+        for warning in parsed.warnings:
+            logger.warning("HTML long-form markup warning in %s: %s", field_name, warning)
 
-        content = escaped_text
-        if safe_href:
-            escaped_href = str(Markup.escape(safe_href))
-            content = f'<a href="{escaped_href}">{content}</a>'
-        if run.italic:
-            content = f"<em>{content}</em>"
-        if run.bold:
-            content = f"<strong>{content}</strong>"
-        output.append(content)
-    return Markup("".join(output))
+        runs_output: list[str] = []
+        for run in parsed.runs:
+            escaped_text = str(Markup.escape(run.text)).replace("\n", "<br>")
+            safe_href = _safe_href_or_none(run.href)
+            if run.href and safe_href is None:
+                logger.warning(
+                    "HTML long-form markup warning in %s: disallowed href omitted", field_name
+                )
+
+            content = escaped_text
+            if safe_href:
+                escaped_href = str(Markup.escape(safe_href))
+                content = f'<a href="{escaped_href}">{content}</a>'
+            if run.italic:
+                content = f"<em>{content}</em>"
+            if run.bold:
+                content = f"<strong>{content}</strong>"
+            runs_output.append(content)
+
+        paragraph_html = "".join(runs_output)
+        if paragraph_mode:
+            paragraph_output.append(f"<p>{paragraph_html}</p>")
+        else:
+            paragraph_output.append(paragraph_html)
+
+    return Markup("".join(paragraph_output))
 
 
 def render_html(context: RenderContext, templates_dir: Path, output_path: Path) -> None:
@@ -114,11 +137,15 @@ def render_html(context: RenderContext, templates_dir: Path, output_path: Path) 
     html_metadata = _build_html_metadata(context, university_name)
     html_tweaks = context.tweaks.get("html", {})
     html_mapping = cast(dict[str, object], html_tweaks) if isinstance(html_tweaks, dict) else {}
-    top_disclaimer = expand_runtime_tokens(
+    top_disclaimer = normalise_multiline_text(
+        expand_runtime_tokens(
         str(html_mapping.get("top_disclaimer", "")), context, university_name
+        )
     )
-    footer = expand_runtime_tokens(
+    footer = normalise_multiline_text(
+        expand_runtime_tokens(
         str(html_mapping.get("footer", "")), context, university_name
+        )
     )
     course_link_template = str(html_mapping.get("course_link_template", ""))
 
@@ -223,7 +250,11 @@ def render_html(context: RenderContext, templates_dir: Path, output_path: Path) 
             top_disclaimer, field_name="html.top_disclaimer"
         ),
         footer_lines_html=[
-            _render_long_form_html(line, field_name="html.footer")
+            _render_long_form_html(
+                line,
+                field_name="html.footer",
+                paragraph_mode=False,
+            )
             for line in footer.splitlines()
         ]
         if footer

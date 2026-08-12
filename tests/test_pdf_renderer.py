@@ -442,6 +442,75 @@ def test_render_pdf_renders_disclaimer_and_footers(
     assert fake.creator.startswith("Copyright © 2026 UNSW Sydney / sequence-visualiser")
 
 
+def test_render_pdf_footer_normalises_multiline_separator_variants(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "footer_left": "Footer A\n \nFooter B\n\n\nFooter C",
+                "footer_right": "",
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+
+    footer_a = [item for item in fake.drawn_text if item[2] == "Footer A"]
+    footer_b = [item for item in fake.drawn_text if item[2] == "Footer B"]
+    footer_c = [item for item in fake.drawn_text if item[2] == "Footer C"]
+    assert footer_a
+    assert footer_b
+    assert footer_c
+
+    # Each paragraph separator should create exactly one blank footer row.
+    assert abs(footer_a[0][1] - footer_b[0][1] - 20) < 1e-6
+    assert abs(footer_b[0][1] - footer_c[0][1] - 20) < 1e-6
+
+
 def test_render_pdf_long_form_markup_uses_styles_only_for_long_form(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:

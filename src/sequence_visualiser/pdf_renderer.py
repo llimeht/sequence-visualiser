@@ -24,7 +24,11 @@ from reportlab.pdfgen import canvas
 
 from .models import Course, RenderContext, YearLayout
 from .render_tokens import resolve_course_handbook_link, runtime_token_values
-from .text_markup import TextRun, parse_inline_markup_with_warnings
+from .text_markup import (
+    TextRun,
+    normalise_multiline_text,
+    parse_inline_markup_with_warnings,
+)
 from .timeline import CALENDAR_MODELS
 
 logger = logging.getLogger(__name__)
@@ -643,7 +647,7 @@ def _render_pdf_template_text(
         raise PdfRenderError(
             f"Unexpanded PDF token placeholder(s): {unresolved_list}"
         )
-    return str(rendered).strip()
+    return normalise_multiline_text(str(rendered)).strip()
 
 
 def _render_pdf_template_lines(
@@ -653,7 +657,7 @@ def _render_pdf_template_lines(
 ) -> list[str]:
     """Render a config value using Jinja and split into non-empty lines."""
     rendered = _render_pdf_template_text(value, template_env, template_context)
-    return [line.strip() for line in rendered.splitlines() if line.strip()]
+    return [line.strip() for line in rendered.splitlines()]
 
 
 def _page_template_context(
@@ -664,11 +668,9 @@ def _page_template_context(
     total_pages: int,
 ) -> dict[str, Any]:
     """Build the PDF template context for a specific page."""
-    tokens = {
-        **runtime_token_values(context, university_name),
-        "page_number": page_number,
-        "total_pages": total_pages,
-    }
+    tokens: dict[str, object] = dict(runtime_token_values(context, university_name))
+    tokens["page_number"] = page_number
+    tokens["total_pages"] = total_pages
     return _pdf_template_context(context, university_name, tokens)
 
 

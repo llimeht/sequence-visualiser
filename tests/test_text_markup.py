@@ -1,4 +1,5 @@
 from sequence_visualiser.text_markup import (
+    normalise_multiline_text,
     parse_inline_bold,
     parse_inline_bold_with_warnings,
     parse_inline_markup,
@@ -82,3 +83,21 @@ def test_render_inline_markup_html_renders_strong_em_and_anchor() -> None:
         "Use <strong><em>care</em></strong> and "
         '<a href="https://example.edu">Guide &amp; Tips</a>'
     )
+
+
+def test_normalise_multiline_text_collapses_blank_separator_variants() -> None:
+    text = "Line A\n \nLine B\n\n\nLine C"
+
+    assert normalise_multiline_text(text) == "Line A\n\nLine B\n\nLine C"
+
+
+def test_normalise_multiline_text_converts_carriage_return_newlines() -> None:
+    text = "Line A\r\nLine B\rLine C"
+
+    assert normalise_multiline_text(text) == "Line A\nLine B\nLine C"
+
+
+def test_normalise_multiline_text_preserves_single_line_breaks() -> None:
+    text = "Line A\nLine B\nLine C"
+
+    assert normalise_multiline_text(text) == text
