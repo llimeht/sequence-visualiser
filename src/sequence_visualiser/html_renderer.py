@@ -44,8 +44,8 @@ def _build_html_metadata(context: RenderContext, university_name: str) -> dict[s
         degree_and_streams = f"{degree_and_streams} - {', '.join(stream_names)}"
 
     tokens = runtime_token_values(context, university_name)
-    information_date = tokens["date"]
-    copyright_year = tokens["year"]
+    information_date = str(tokens["date"])
+    copyright_year = str(tokens["year"])
 
     source_filename = context.plan.source_path.name
     rules_filename = context.rule_metadata.rule_file.name

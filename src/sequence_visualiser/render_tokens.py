@@ -25,6 +25,12 @@ class TokenExpansionError(ValueError):
 _BRACE_TOKEN_PATTERN = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 
 
+def _coerce_int_if_decimal(value: str) -> str | int:
+    """Return an int for decimal text, otherwise return the original string."""
+    stripped = value.strip()
+    return int(stripped) if stripped.isdecimal() else value
+
+
 def _notes_token_values(context: RenderContext) -> dict[str, str]:
     notes = context.plan.notes if isinstance(context.plan.notes, dict) else {}
 
@@ -49,7 +55,7 @@ def _notes_token_values(context: RenderContext) -> dict[str, str]:
 
 def runtime_token_values(
     context: RenderContext, university_name: str
-) -> dict[str, str]:
+) -> dict[str, object]:
     """Return shared token values used by renderers and templates."""
     runtime = context.tweaks.get("runtime", {})
     runtime_mapping: dict[str, object] = (
@@ -72,15 +78,15 @@ def runtime_token_values(
     majors_text = ", ".join(context.rule_metadata.specialisation_names)
     return {
         "date": date_value,
-        "year": year_value,
+        "year": _coerce_int_if_decimal(year_value),
         "university_name": university_name,
         "plan_code": context.plan_code,
         "plan_description": context.rule_metadata.plan_description,
         "plan_description_short": context.rule_metadata.plan_description,
-        "program_code": program_id_value,
-        "program_id": program_id_value,
+        "program_code": _coerce_int_if_decimal(program_id_value),
+        "program_id": _coerce_int_if_decimal(program_id_value),
         "intake": intake_value,
-        "intake_year": intake_year_value,
+        "intake_year": _coerce_int_if_decimal(intake_year_value),
         "intake_period": intake_period_value,
         "program_name": context.rule_metadata.program_name,
         "majors": majors_text,
@@ -92,11 +98,11 @@ def runtime_token_values(
     }
 
 
-def expand_tokens_with_values(text: str, tokens: Mapping[str, str]) -> str:
+def expand_tokens_with_values(text: str, tokens: Mapping[str, object]) -> str:
     """Expand supported {token} placeholders in text."""
     expanded = text
     for token, value in tokens.items():
-        expanded = expanded.replace(f"{{{token}}}", value)
+        expanded = expanded.replace(f"{{{token}}}", str(value))
 
     unresolved: set[str] = set()
     unresolved.update(match.group(0) for match in _BRACE_TOKEN_PATTERN.finditer(expanded))
@@ -129,7 +135,7 @@ def render_course_link_url(
     *,
     context: RenderContext,
     course: Course,
-    tokens: Mapping[str, str],
+    tokens: Mapping[str, object],
 ) -> str | None:
     """Render and validate a per-course handbook URL from a Jinja template."""
     if not template_text.strip():
@@ -190,7 +196,7 @@ def resolve_course_handbook_link(
     *,
     context: RenderContext,
     course: Course,
-    tokens: Mapping[str, str],
+    tokens: Mapping[str, object],
 ) -> str | None:
     """Resolve handbook link URL using override semantics and fallback rules."""
     override_entry = resolve_course_override(

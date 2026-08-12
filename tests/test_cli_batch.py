@@ -141,6 +141,52 @@ def test_html_template_renders_expanded_sections(tmp_path: Path) -> None:
     assert '<details class="year" open>' in html
 
 
+def test_html_template_supports_numeric_token_comparisons(tmp_path: Path) -> None:
+    templates_dir = tmp_path / "templates"
+    (templates_dir / "config").mkdir(parents=True)
+    (templates_dir / "config" / "defaults.json").write_text("{}", encoding="utf-8")
+    (templates_dir / "sequence.html.j2").write_text(
+        """<!doctype html><html><body>{% if tokens.intake_year >= 2026 and tokens.program_code == 3707 and tokens.year == 2026 %}NUMERIC_OK{% else %}NUMERIC_BAD{% endif %}</body></html>""",
+        encoding="utf-8",
+    )
+
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan(plan, "Term 1")
+
+    output_dir = tmp_path / "out"
+    rc = main(
+        [
+            str(plan),
+            "--output-dir",
+            str(output_dir),
+            "--rules-dir",
+            str(rules_dir),
+            "--templates-dir",
+            str(templates_dir),
+            "--config-dir",
+            str(templates_dir / "config"),
+            "--metadata-source",
+            "rules",
+            "--formats",
+            "html",
+            "--datestamp",
+            "2026-05-28",
+        ]
+    )
+
+    assert rc == 0
+    html = (output_dir / "CEICAH3707_2026_T1.html").read_text(encoding="utf-8")
+    assert "NUMERIC_OK" in html
+    assert "NUMERIC_BAD" not in html
+
+
 def test_pdf_renders_with_custom_colour_config(tmp_path: Path) -> None:
     templates_dir = tmp_path / "templates"
     (templates_dir / "config").mkdir(parents=True)
@@ -851,6 +897,40 @@ def test_cli_defaults_resolve_from_project_root_not_cwd(
     )
 
     assert rc == 0
+
+
+def test_runtime_tokens_coerce_known_numeric_fields_for_jinja(tmp_path: Path) -> None:
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "CEICAH3707-2026-2029.json").write_text(
+        '{"program":{"name":"BE(Hons)"},"specialisations":[{"name":"Chemical Engineering"}],"validity":{"from":"2026","to":"2029"}}',
+        encoding="utf-8",
+    )
+
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    _write_plan(plan_path, "Term 1")
+
+    plan = load_plan(plan_path)
+    identity, metadata = resolve_rule_metadata(plan, rules_dir)
+    context = RenderContext(
+        plan=plan,
+        rule_metadata=metadata,
+        tweaks={"runtime": {"date": "2026-05-28", "year": "2026"}},
+        years=build_year_layouts(plan),
+        plan_code=identity.plan_code,
+        specialisation_code=identity.specialisation_code,
+        degree_code=identity.degree_code,
+        specialisation_codes=identity.specialisation_codes,
+    )
+
+    tokens = runtime_token_values(context, "Test Uni")
+
+    assert tokens["year"] == 2026
+    assert tokens["intake_year"] == 2026
+    assert tokens["program_code"] == 3707
+    assert expand_runtime_tokens("Issued {year} for {program_code}", context, "Test Uni") == (
+        "Issued 2026 for 3707"
+    )
 
 
 def test_cli_warns_for_noncanonical_course_code_without_override(

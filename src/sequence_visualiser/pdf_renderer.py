@@ -297,8 +297,8 @@ def build_pdf_metadata(context: RenderContext, university_name: str) -> dict[str
     source_filename = context.plan.source_path.name
     rules_filename = context.rule_metadata.rule_file.name
     tokens = runtime_token_values(context, university_name)
-    information_date = tokens["date"]
-    copyright_year = tokens["year"]
+    information_date = str(tokens["date"])
+    copyright_year = str(tokens["year"])
 
     return {
         "title": f"Enrolment Sequence for {plan} - {intake} - {university_name}",
@@ -601,7 +601,7 @@ def _bool_config(value: object) -> bool:
 def _pdf_template_context(
     context: RenderContext,
     university_name: str,
-    tokens: Mapping[str, str],
+    tokens: Mapping[str, object],
 ) -> dict[str, Any]:
     """Build the Jinja context used for PDF text fields."""
     program_id = context.rule_metadata.program_id or context.degree_code
@@ -666,8 +666,8 @@ def _page_template_context(
     """Build the PDF template context for a specific page."""
     tokens = {
         **runtime_token_values(context, university_name),
-        "page_number": str(page_number),
-        "total_pages": str(total_pages),
+        "page_number": page_number,
+        "total_pages": total_pages,
     }
     return _pdf_template_context(context, university_name, tokens)
 
