@@ -775,6 +775,75 @@ def test_render_pdf_does_not_link_or_underline_space_before_link(
     assert len(matching) == 1
 
 
+def test_render_pdf_does_not_insert_space_between_link_and_punctuation(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "CEICAH3707_2026_T1.json"
+    term1_course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="MATH1131",
+        title="Math",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[term1_course],
+            source_path=plan_path,
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/3707-3778.json"),
+            program_name="Bachelor of Advanced Computing",
+            specialisation_names=[],
+            validity_from="2026",
+            validity_to="2028",
+        ),
+        tweaks={
+            "branding": {"university_name": "UNSW Sydney"},
+            "pdf": {
+                "top_disclaimer": (
+                    "See <a href=\"https://example.edu\">Handbook</a>, "
+                    "then enrol."
+                ),
+            },
+        },
+        years=[
+            YearLayout(
+                enrol_year="Year 1",
+                year=2026,
+                calendar_type="term",
+                periods=[PeriodLayout(period="Term 1", courses=[term1_course])],
+            )
+        ],
+        plan_code="CEICAH3707",
+        specialisation_code="3778",
+        degree_code="3707",
+    )
+
+    monkeypatch.setattr("sequence_visualiser.pdf_renderer.canvas.Canvas", _FakeCanvas)
+    render_pdf(context, tmp_path / "out.pdf", tmp_path)
+
+    fake = _FakeCanvas.last
+    assert fake is not None
+    assert any(url == "https://example.edu" for url, _rect, _relative in fake.link_url_calls)
+
+    same_line_fragments = [text for _x, _y, text in fake.drawn_text]
+    for index, text in enumerate(same_line_fragments[:-1]):
+        if text == "Handbook":
+            assert same_line_fragments[index + 1] != " "
+            break
+    else:
+        raise AssertionError("Expected linked Handbook fragment to be drawn")
+
+
 def test_render_pdf_course_grid_links_code_and_display_title(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:

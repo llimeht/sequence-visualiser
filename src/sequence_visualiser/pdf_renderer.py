@@ -1074,6 +1074,16 @@ def _run_width(run: TextRun, *, fonts: Mapping[str, Any], font_size: int) -> flo
         font_name = regular_font
     return cast(float, pdfmetrics.stringWidth(run.text, font_name, font_size)) # pyright: ignore[reportUnnecessaryCast]
 
+def _trim_boundary_whitespace_runs(runs: list[TextRun]) -> list[TextRun]:
+    """Remove leading and trailing whitespace-only runs from a wrapped line."""
+    start = 0
+    end = len(runs)
+    while start < end and runs[start].text.isspace():
+        start += 1
+    while end > start and runs[end - 1].text.isspace():
+        end -= 1
+    return runs[start:end]
+
 
 def _wrap_runs_preserving_blank_lines(
     text: str,
@@ -1093,8 +1103,6 @@ def _wrap_runs_preserving_blank_lines(
     )
 
     wrapped: list[list[TextRun]] = []
-    space_run = TextRun(" ")
-    space_width = _run_width(space_run, fonts=fonts, font_size=font_size)
 
     for paragraph in text.splitlines():
         if not paragraph.strip():
@@ -1117,12 +1125,11 @@ def _wrap_runs_preserving_blank_lines(
 
         tokens: list[TextRun] = []
         for source_run in parsed_runs:
-            words = source_run.text.split()
-            for word in words:
-                if word:
+            for piece in re.findall(r"\S+|\s+", source_run.text):
+                if piece:
                     tokens.append(
                         TextRun(
-                            word,
+                            piece,
                             bold=source_run.bold,
                             italic=source_run.italic,
                             href=source_run.href,
@@ -1137,30 +1144,22 @@ def _wrap_runs_preserving_blank_lines(
         current_width = 0.0
         for token in tokens:
             token_width = _run_width(token, fonts=fonts, font_size=font_size)
-            additional = token_width if not current_line else token_width + space_width
-            if current_line and (current_width + additional) > max_width:
-                wrapped.append(current_line)
-                current_line = [token]
-                current_width = token_width
+
+            if token.text.isspace() and not current_line:
                 continue
-            if current_line:
-                previous_token = current_line[-1]
-                current_line.append(
-                    TextRun(
-                        " ",
-                        bold=previous_token.bold and token.bold,
-                        italic=previous_token.italic and token.italic,
-                        href=previous_token.href
-                        if previous_token.href == token.href
-                        else None,
-                    )
-                )
-                current_width += space_width
+
+            if current_line and (current_width + token_width) > max_width:
+                wrapped.append(_trim_boundary_whitespace_runs(current_line))
+                current_line = []
+                current_width = 0.0
+                if token.text.isspace():
+                    continue
+
             current_line.append(token)
             current_width += token_width
 
         if current_line:
-            wrapped.append(current_line)
+            wrapped.append(_trim_boundary_whitespace_runs(current_line))
 
     return wrapped
 
