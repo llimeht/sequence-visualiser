@@ -191,6 +191,39 @@ def _override_namespace_candidates(context: RenderContext) -> list[str]:
     ]
 
 
+def _resolve_override_for_rendered_course(
+    *,
+    context: RenderContext,
+    course: Course,
+) -> Mapping[str, object] | None:
+    """Resolve override entry for a rendered course.
+
+    Rendering happens after code/title overrides are applied, so direct lookup by
+    current course code can miss the original override key (for example GenEd ->
+    Elective). Fall back to matching override code+title to preserve handbook_link.
+    """
+    namespace_candidates = _override_namespace_candidates(context)
+    direct = resolve_course_override(
+        course.code,
+        context.course_overrides,
+        namespace_candidates=namespace_candidates,
+    )
+    if direct is not None:
+        return direct
+
+    course_code = course.code.strip()
+    course_title = course.title.strip()
+    for entry in context.course_overrides.values():
+        override_code = entry.get("code")
+        override_title = entry.get("title")
+        if not isinstance(override_code, str) or not isinstance(override_title, str):
+            continue
+        if override_code.strip() == course_code and override_title.strip() == course_title:
+            return entry
+
+    return None
+
+
 def resolve_course_handbook_link(
     template_text: str,
     *,
@@ -199,10 +232,9 @@ def resolve_course_handbook_link(
     tokens: Mapping[str, object],
 ) -> str | None:
     """Resolve handbook link URL using override semantics and fallback rules."""
-    override_entry = resolve_course_override(
-        course.code,
-        context.course_overrides,
-        namespace_candidates=_override_namespace_candidates(context),
+    override_entry = _resolve_override_for_rendered_course(
+        context=context,
+        course=course,
     )
 
     if override_entry is not None:

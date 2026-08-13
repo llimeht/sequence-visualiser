@@ -4,15 +4,5 @@
     "code": "Elective",
     "title": "An elective course in MyStream",
     "aliases": ["OtherStreamElective", "ABCD::MyStreamElective"]
-  },
-  "XDelective": {
-    "code": "Elective",
-    "title": "Cross-disciplinary (XD) Elective",
-    "aliases": ["GenEd", "GenEd1", "GenEd2", "XDElective1", "XDElective2", "GEN ED"]
-  },
-  "FREE": {
-    "code": "Elective",
-    "title": "Free Elective (any course)",
-    "aliases": ["FREE1", "FREE2", "FREE3", "FREE4", "FREE5", "FREE6"]
   }
 }

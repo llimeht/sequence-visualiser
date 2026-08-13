@@ -707,6 +707,70 @@ def test_resolve_course_handbook_link_unlinks_noncanonical_without_override(
     assert warnings == []
 
 
+def test_resolve_course_handbook_link_uses_override_after_code_title_remap(
+    tmp_path: Path,
+) -> None:
+    # Simulate post-override rendered course where original key was an alias (e.g. GenEd)
+    # but rendered code/title are now Elective / XD title.
+    course = Course(
+        enrol_year="Year 1",
+        year=2026,
+        period="Term 1",
+        course_n="Course 1",
+        code="Elective",
+        title="Cross-disciplinary (XD) Elective",
+        uoc=6,
+        prerequisites=".",
+    )
+    context = RenderContext(
+        plan=Plan(
+            sheet="CEICAH3707",
+            program="CEICAH3707",
+            career="Undergraduate",
+            uoc=192,
+            intake="2026 T1",
+            courses=[course],
+            source_path=tmp_path / "plan.json",
+        ),
+        rule_metadata=RuleMetadata(
+            rule_file=Path("rules/CEICAH3707-2026-2029.json"),
+            program_name="BE(Hons)",
+            specialisation_names=["Chemical Engineering"],
+            validity_from="2026",
+            validity_to="2029",
+        ),
+        tweaks={},
+        years=[],
+        plan_code="CEICAH3707",
+        specialisation_code="3707",
+        degree_code="3707",
+        course_overrides={
+            "XDELECTIVE": {
+                "code": "Elective",
+                "title": "Cross-disciplinary (XD) Elective",
+                "handbook_link": "https://www.unsw.edu.au/student/managing-your-studies/essentials/enrolment/differences-between-courses-classes/general-education",
+            },
+            "GENED": {
+                "code": "Elective",
+                "title": "Cross-disciplinary (XD) Elective",
+                "handbook_link": "https://www.unsw.edu.au/student/managing-your-studies/essentials/enrolment/differences-between-courses-classes/general-education",
+            },
+        },
+    )
+
+    resolved = resolve_course_handbook_link(
+        "https://handbook.example.org/{{ career }}/courses/current/{{ code }}",
+        context=context,
+        course=course,
+        tokens=runtime_token_values(context, "Test Uni"),
+    )
+
+    assert (
+        resolved
+        == "https://www.unsw.edu.au/student/managing-your-studies/essentials/enrolment/differences-between-courses-classes/general-education"
+    )
+
+
 def test_html_long_form_unclosed_bold_tag_logs_warning(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
